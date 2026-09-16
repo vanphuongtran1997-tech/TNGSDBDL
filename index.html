@@ -3,6 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Ensure window.fetch has both a getter and a setter so that third-party scripts,
+      // sandbox environments, and monitoring wrappers can safely reassign or patch window.fetch
+      // without triggering "Cannot set property fetch of #<Window> which has only a getter".
+      (function() {
+        try {
+          var origFetch = typeof window !== 'undefined' && window.fetch ? window.fetch.bind(window) : null;
+          var customFetch = origFetch;
+          Object.defineProperty(window, 'fetch', {
+            get: function() {
+              return customFetch;
+            },
+            set: function(fn) {
+              customFetch = fn;
+            },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {
+          try {
+            var proto = Object.getPrototypeOf(window) || (window.constructor && window.constructor.prototype);
+            if (proto) {
+              var origProtoFetch = proto.fetch ? proto.fetch.bind(window) : null;
+              var customProtoFetch = origProtoFetch;
+              Object.defineProperty(proto, 'fetch', {
+                get: function() {
+                  return customProtoFetch;
+                },
+                set: function(fn) {
+                  customProtoFetch = fn;
+                },
+                configurable: true,
+                enumerable: true
+              });
+            }
+          } catch (e2) {}
+        }
+      })();
+    </script>
     <title>Quản Lý Giáo Lý Don Bosco Đà Lạt</title>
     <meta name="description" content="Hệ thống quản lý giáo lý, điểm danh QR, sổ liên lạc, tính điểm tự động, học phí, lịch niên khóa và giáo lý viên Giáo sở Don Bosco Đà Lạt" />
     <meta property="og:title" content="Quản Lý Giáo Lý Don Bosco Đà Lạt" />

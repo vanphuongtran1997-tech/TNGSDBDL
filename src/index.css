@@ -1,1 +1,60 @@
 @import "tailwindcss";
+
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* When printing cards, hide all non-card elements */
+  body.printing-student-cards {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  body.printing-student-cards #root > div > *:not(#student-card-modal-root) {
+    display: none !important;
+  }
+
+  body.printing-student-cards .modal-backdrop-screen {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    max-height: none !important;
+    inset: auto !important;
+    display: block !important;
+  }
+
+  body.printing-student-cards .modal-dialog-screen {
+    position: static !important;
+    max-height: none !important;
+    max-width: none !important;
+    overflow: visible !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+
+  .print-page-break {
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .print-avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+

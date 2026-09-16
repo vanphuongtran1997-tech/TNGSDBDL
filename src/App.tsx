@@ -25,6 +25,7 @@ import {
   EmailNotification, 
   UserAccount, 
   AttendanceStatus, 
+  AttendanceTimeSlot,
   ConductViolation 
 } from './types';
 import { Navbar, ActiveTab } from './components/Navbar';
@@ -43,11 +44,27 @@ import { ReportBookModal } from './components/ReportBookModal';
 import { ClassTransferModal } from './components/ClassTransferModal';
 import { BatchClearOptions } from './components/BatchFieldClearModal';
 import { AccountManagement } from './components/AccountManagement';
+import { LoginScreen } from './components/LoginScreen';
+import { SwitchAccountModal } from './components/SwitchAccountModal';
 
 export default function App() {
   // Application Data State
   const [allUsers, setAllUsers] = useState<UserAccount[]>(mockUsers);
-  const [currentUser, setCurrentUser] = useState<UserAccount>(mockUsers[0]);
+
+  // Authentication & Session State (Persisted)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return Boolean(localStorage.getItem('donbosco_auth_user_id'));
+  });
+
+  const [currentUser, setCurrentUser] = useState<UserAccount>(() => {
+    const savedUserId = localStorage.getItem('donbosco_auth_user_id');
+    if (savedUserId) {
+      const matched = mockUsers.find(u => u.id === savedUserId);
+      if (matched && matched.status !== 'locked') return matched;
+    }
+    return mockUsers[0];
+  });
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('students');
 
   const [students, setStudents] = useState<Student[]>(mockStudents);
@@ -64,11 +81,45 @@ export default function App() {
   // Modal States
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
   const [cardModalClassId, setCardModalClassId] = useState<string | undefined>(undefined);
+  const [cardModalStudentIds, setCardModalStudentIds] = useState<string[] | undefined>(undefined);
   const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
   const [isIdSearchModalOpen, setIsIdSearchModalOpen] = useState(false);
   const [reportBookStudent, setReportBookStudent] = useState<Student | null>(null);
   const [transferModalStudent, setTransferModalStudent] = useState<Student | undefined>(undefined);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+
+  // Switch Account & Login Modals
+  const [isSwitchAccountModalOpen, setIsSwitchAccountModalOpen] = useState(false);
+  const [switchTargetUser, setSwitchTargetUser] = useState<UserAccount | null>(null);
+
+  const handleLogin = (user: UserAccount) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+    localStorage.setItem('donbosco_auth_user_id', user.id);
+    const nowStr = new Date().toLocaleString('vi-VN');
+    setAllUsers(prev => prev.map(u => u.id === user.id ? { ...u, lastLogin: nowStr } : u));
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    localStorage.removeItem('donbosco_auth_user_id');
+    setIsSwitchAccountModalOpen(false);
+    setSwitchTargetUser(null);
+  };
+
+  const handleOpenSwitchAccount = (targetUser?: UserAccount) => {
+    setSwitchTargetUser(targetUser || null);
+    setIsSwitchAccountModalOpen(true);
+  };
+
+  const handleConfirmSwitchAccount = (targetUser: UserAccount) => {
+    setCurrentUser(targetUser);
+    localStorage.setItem('donbosco_auth_user_id', targetUser.id);
+    setIsSwitchAccountModalOpen(false);
+    setSwitchTargetUser(null);
+    const nowStr = new Date().toLocaleString('vi-VN');
+    setAllUsers(prev => prev.map(u => u.id === targetUser.id ? { ...u, lastLogin: nowStr } : u));
+  };
 
   // --- Student Management Handlers ---
   const handleAddStudent = (newSt: Omit<Student, 'id'>) => {
@@ -306,14 +357,17 @@ export default function App() {
     status: AttendanceStatus, 
     date: string, 
     sessionType: 'Chúa Nhật' | 'Thứ 5',
-    semester: 1 | 2
+    semester: 1 | 2,
+    note?: string,
+    scanTime?: string,
+    timeSlot?: AttendanceTimeSlot
   ) => {
     const student = students.find(s => s.id === studentId);
     if (!student) return;
 
     setAttendanceRecords(prev => {
       const existingIdx = prev.findIndex(
-        r => r.studentId === studentId && r.date === date && r.semester === semester
+        r => r.studentId === studentId && r.date === date && r.sessionType === sessionType && r.semester === semester
       );
       if (existingIdx >= 0) {
         const updated = [...prev];
@@ -321,6 +375,9 @@ export default function App() {
           ...updated[existingIdx],
           status,
           sessionType,
+          scanTime: scanTime || updated[existingIdx].scanTime,
+          timeSlot: timeSlot || updated[existingIdx].timeSlot,
+          note: note !== undefined ? note : updated[existingIdx].note,
         };
         return updated;
       } else {
@@ -332,6 +389,9 @@ export default function App() {
           sessionType,
           status,
           semester,
+          scanTime,
+          timeSlot,
+          note,
         };
         return [...prev, newRecord];
       }
@@ -348,7 +408,7 @@ export default function App() {
     setAttendanceRecords(prev => {
       // Remove any existing records for this class & date, then replace with 'A'
       const filtered = prev.filter(
-        r => !(r.classId === classId && r.date === date && r.semester === semester)
+        r => !(r.classId === classId && r.date === date && r.sessionType === sessionType && r.semester === semester)
       );
       const newItems: AttendanceRecord[] = targetStudents.map(st => ({
         id: `att-batch-${st.id}-${date}`,
@@ -369,9 +429,15 @@ export default function App() {
     studentId: string,
     status: AttendanceStatus,
     date: string,
-    sessionType: 'Chúa Nhật' | 'Thứ 5'
+    sessionType: 'Chúa Nhật' | 'Thứ 5',
+    scanTime?: string,
+    timeSlot?: AttendanceTimeSlot,
+    note?: string
   ) => {
-    handleUpdateAttendance(studentId, status, date, sessionType, 1);
+    // Automatically determine semester based on month (Sept - Jan: Sem 1, Feb - Aug: Sem 2)
+    const month = new Date(date).getMonth() + 1;
+    const semester: 1 | 2 = (month >= 9 || month <= 1) ? 1 : 2;
+    handleUpdateAttendance(studentId, status, date, sessionType, semester, note, scanTime, timeSlot);
   };
 
   // --- Grade Handlers ---
@@ -520,6 +586,11 @@ export default function App() {
     setNotifications(prev => [newNotification, ...prev]);
   };
 
+  // If not authenticated, render Login Screen
+  if (!isAuthenticated) {
+    return <LoginScreen allUsers={allUsers} onLogin={handleLogin} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans">
       {/* Top Main Navigation Bar */}
@@ -528,7 +599,8 @@ export default function App() {
         setActiveTab={setActiveTab}
         currentUser={currentUser}
         allUsers={allUsers}
-        onSwitchUser={setCurrentUser}
+        onRequestSwitchAccount={handleOpenSwitchAccount}
+        onLogout={handleLogout}
         onOpenQRScanner={() => setIsQRScannerOpen(true)}
         onOpenIdSearch={() => setIsIdSearchModalOpen(true)}
       />
@@ -546,8 +618,9 @@ export default function App() {
             onBatchImportStudents={handleBatchImportStudents}
             onExecuteBatchClear={handleExecuteBatchClear}
             onDeleteMultipleStudents={handleDeleteMultipleStudents}
-            onOpenCardModal={(classId) => {
+            onOpenCardModal={(classId, studentIds) => {
               setCardModalClassId(classId);
+              setCardModalStudentIds(studentIds);
               setIsCardModalOpen(true);
             }}
             onOpenReportBook={(st) => setReportBookStudent(st)}
@@ -728,18 +801,35 @@ export default function App() {
             onDeleteUser={handleDeleteUser}
             onToggleLockUser={handleToggleLockUser}
             onResetPassword={handleResetPassword}
-            onSwitchUser={(u) => setCurrentUser(u)}
+            onSwitchUser={handleOpenSwitchAccount}
           />
         )}
       </main>
 
       {/* Global Modals */}
+      {isSwitchAccountModalOpen && (
+        <SwitchAccountModal
+          currentUser={currentUser}
+          allUsers={allUsers}
+          targetUser={switchTargetUser}
+          onConfirmSwitch={handleConfirmSwitchAccount}
+          onLogoutToLoginScreen={handleLogout}
+          onClose={() => {
+            setIsSwitchAccountModalOpen(false);
+            setSwitchTargetUser(null);
+          }}
+        />
+      )}
       {isCardModalOpen && (
         <StudentCardModal
           students={students}
           classes={classes}
           selectedClassId={cardModalClassId}
-          onClose={() => setIsCardModalOpen(false)}
+          initialStudentIds={cardModalStudentIds}
+          onClose={() => {
+            setIsCardModalOpen(false);
+            setCardModalStudentIds(undefined);
+          }}
         />
       )}
 

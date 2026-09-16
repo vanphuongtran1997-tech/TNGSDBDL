@@ -1,12 +1,15 @@
 import QRCode from 'qrcode';
 
-export async function generateQRCodeDataUrl(text: string): Promise<string> {
+export async function generateQRCodeDataUrl(
+  text: string, 
+  options?: { width?: number; margin?: number; darkColor?: string }
+): Promise<string> {
   try {
     const dataUrl = await QRCode.toDataURL(text, {
-      width: 260,
-      margin: 2,
+      width: options?.width || 380,
+      margin: options?.margin !== undefined ? options.margin : 1,
       color: {
-        dark: '#1e3a8a', // Deep navy
+        dark: options?.darkColor || '#000000', // Pure black for maximal scanner contrast
         light: '#ffffff',
       },
       errorCorrectionLevel: 'M',
@@ -17,3 +20,4 @@ export async function generateQRCodeDataUrl(text: string): Promise<string> {
     return '';
   }
 }
+

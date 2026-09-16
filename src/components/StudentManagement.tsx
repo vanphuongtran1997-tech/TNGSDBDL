@@ -42,7 +42,7 @@ interface StudentManagementProps {
     options: BatchClearOptions
   ) => void;
   onDeleteMultipleStudents: (studentIds: string[]) => void;
-  onOpenCardModal: (classId?: string) => void;
+  onOpenCardModal: (classId?: string, studentIds?: string[]) => void;
   onOpenReportBook: (student: Student) => void;
   onOpenTransferModal: (student?: Student) => void;
   onOpenIdSearchModal?: () => void;
@@ -316,6 +316,16 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenCardModal(selectedClassId === 'all' ? undefined : selectedClassId, selectedStudentIds)}
+              className="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+              title="In thẻ ATM cho các học sinh đã chọn"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>In Thẻ ATM ({selectedStudentIds.length} em)</span>
+            </button>
+
             {isAdmin && (
               <button
                 type="button"
@@ -611,6 +621,15 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                           title="Xem Sổ Liên Lạc"
                         >
                           <BookOpen className="w-4 h-4" />
+                        </button>
+
+                        {/* Print Single Student ATM Card & QR */}
+                        <button
+                          onClick={() => onOpenCardModal(st.classId, [st.id])}
+                          className="p-1.5 text-blue-700 hover:text-blue-900 hover:bg-blue-50 rounded"
+                          title="In Thẻ ATM & QR cho em này"
+                        >
+                          <Printer className="w-4 h-4" />
                         </button>
 
                         {/* Special Promotion for Admin or Pastor */}

@@ -15,7 +15,9 @@ import {
   ChevronDown,
   UserCog,
   Database,
-  Crown
+  Crown,
+  LogOut,
+  Lock
 } from 'lucide-react';
 import { Role, UserAccount } from '../types';
 
@@ -38,7 +40,8 @@ interface NavbarProps {
   setActiveTab: (tab: ActiveTab) => void;
   currentUser: UserAccount;
   allUsers: UserAccount[];
-  onSwitchUser: (user: UserAccount) => void;
+  onRequestSwitchAccount: (user?: UserAccount) => void;
+  onLogout: () => void;
   onOpenQRScanner: () => void;
   onOpenIdSearch: () => void;
   onOpenBackupRestore?: () => void;
@@ -50,7 +53,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   setActiveTab,
   currentUser,
   allUsers,
-  onSwitchUser,
+  onRequestSwitchAccount,
+  onLogout,
   onOpenQRScanner,
   onOpenIdSearch,
   onOpenBackupRestore,
@@ -163,61 +167,113 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Role switch dropdown */}
+            {/* Role switch dropdown & Logout */}
             <div className="relative">
               <button
                 id="user-role-switch-btn"
                 onClick={() => setShowUserDropdown(!showUserDropdown)}
                 className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 transition-colors"
+                title="Tài khoản đang đăng nhập & Đổi người dùng"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                <span className="font-medium max-w-[150px] truncate">{currentUser.name}</span>
+                <span className="font-medium max-w-[140px] truncate">{currentUser.name}</span>
                 <ChevronDown className="w-3 h-3 text-slate-400" />
               </button>
 
               {showUserDropdown && (
                 <div 
-                  className="absolute right-0 mt-1 w-72 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50 text-slate-800"
+                  className="absolute right-0 mt-1 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 z-50 text-slate-800"
                   onMouseLeave={() => setShowUserDropdown(false)}
                 >
-                  <div className="px-3 py-1.5 border-b border-slate-100 text-xs text-slate-600 font-semibold uppercase tracking-wider">
-                    Chuyển Đổi Tài Khoản / Phân Quyền
+                  {/* Current Active Account Header */}
+                  <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-100 mb-1">
+                    <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                      Đang Đăng Nhập Với Tư Cách
+                    </div>
+                    <div className="text-xs font-bold text-slate-900 truncate mt-0.5">
+                      {currentUser.holyName} {currentUser.name}
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[11px] font-mono text-slate-500">@{currentUser.username}</span>
+                      {getRoleBadge(currentUser.role)}
+                    </div>
                   </div>
-                  {allUsers.map((user) => (
-                    <button
-                      key={user.id}
-                      onClick={() => {
-                        onSwitchUser(user);
-                        setShowUserDropdown(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 flex items-start gap-2.5 text-xs hover:bg-slate-50 transition-colors ${
-                        currentUser.id === user.id ? 'bg-amber-50 font-medium' : ''
-                      }`}
-                    >
-                      <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-700 shrink-0 text-xs">
-                        {user.holyName ? user.holyName.charAt(0) : 'U'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-slate-900 font-medium truncate">{user.name}</div>
-                        <div className="mt-0.5">{getRoleBadge(user.role)}</div>
-                      </div>
-                    </button>
-                  ))}
-                  <div className="mt-1 pt-1.5 border-t border-slate-100 px-2">
+
+                  <div className="px-3.5 py-1 text-[11px] text-slate-500 font-semibold flex items-center justify-between">
+                    <span>Chuyển Tài Khoản Khác:</span>
+                    <span className="text-[10px] text-amber-600 font-normal flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> Yêu cầu mật khẩu
+                    </span>
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto pr-1">
+                    {allUsers
+                      .filter((u) => u.id !== currentUser.id)
+                      .map((user) => (
+                        <button
+                          key={user.id}
+                          onClick={() => {
+                            setShowUserDropdown(false);
+                            onRequestSwitchAccount(user);
+                          }}
+                          className="w-full text-left px-3.5 py-2 flex items-center gap-2.5 text-xs hover:bg-slate-50 transition-colors group cursor-pointer"
+                          title={`Chuyển sang tài khoản ${user.name} (Cần nhập mật khẩu)`}
+                        >
+                          <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-700 shrink-0 text-xs group-hover:border-amber-400 group-hover:bg-amber-50">
+                            {user.holyName ? user.holyName.charAt(0) : 'U'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-slate-900 font-medium truncate group-hover:text-amber-800">
+                              {user.name}
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                              <span>@{user.username}</span>
+                              <span>•</span>
+                              <span>{user.role}</span>
+                            </div>
+                          </div>
+                          <Lock className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 shrink-0" />
+                        </button>
+                      ))}
+                  </div>
+
+                  <div className="mt-2 pt-2 border-t border-slate-100 px-3 space-y-1">
                     <button
                       onClick={() => {
                         setActiveTab('accounts');
                         setShowUserDropdown(false);
                       }}
-                      className="w-full py-1.5 px-2.5 rounded text-xs font-semibold text-rose-700 hover:bg-rose-50 flex items-center justify-center gap-1.5 transition-colors"
+                      className="w-full py-1.5 px-2 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 flex items-center gap-2 transition-colors cursor-pointer"
                     >
-                      <UserCog className="w-3.5 h-3.5" />
-                      <span>Trang Quản Lý Tài Khoản</span>
+                      <UserCog className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Quản Lý Phân Quyền Tài Khoản</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        onLogout();
+                      }}
+                      className="w-full py-1.5 px-2 rounded-lg text-xs font-semibold text-rose-700 hover:bg-rose-50 flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Đăng Xuất Khỏi Hệ Thống</span>
                     </button>
                   </div>
                 </div>
               )}
             </div>
+
+            {/* Direct Quick Logout Button on Top Bar */}
+            <button
+              id="top-quick-logout-btn"
+              onClick={onLogout}
+              className="inline-flex items-center gap-1 px-2 py-1 bg-slate-800 hover:bg-rose-950/80 hover:text-rose-200 text-slate-300 border border-slate-700 hover:border-rose-700 text-xs font-medium rounded-md shadow-xs transition-colors cursor-pointer"
+              title="Đăng xuất khỏi phiên làm việc hiện tại"
+            >
+              <LogOut className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden lg:inline">Đăng Xuất</span>
+            </button>
           </div>
         </div>
       </div>
