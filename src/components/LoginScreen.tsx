@@ -13,8 +13,8 @@ import {
   PhoneCall,
   Sparkles
 } from 'lucide-react';
-import { UserAccount, Role, Student, ClassRoom, Catechist, CalendarEvent } from '../types';
-import { getDefaultPasswordForRole } from '../data/mockData';
+import { UserAccount, Role, Student, ClassRoom, Catechist, CalendarEvent, ParishInfo } from '../types';
+import { getDefaultPasswordForRole, DEFAULT_PARISH_INFO } from '../data/mockData';
 import { PublicStudentLookupModal } from './PublicStudentLookupModal';
 import { PublicAcademicYearModal } from './PublicAcademicYearModal';
 import { PublicOfficeContactModal } from './PublicOfficeContactModal';
@@ -25,6 +25,7 @@ interface LoginScreenProps {
   classes?: ClassRoom[];
   catechists?: Catechist[];
   events?: CalendarEvent[];
+  parishInfo?: ParishInfo;
   onLogin: (user: UserAccount) => void;
 }
 
@@ -34,6 +35,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   classes = [],
   catechists = [],
   events = [],
+  parishInfo = DEFAULT_PARISH_INFO,
   onLogin 
 }) => {
   const [username, setUsername] = useState('');
@@ -164,7 +166,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       <div className="max-w-4xl mx-auto w-full text-center space-y-2">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-semibold tracking-wide uppercase shadow-sm">
           <Church className="w-4 h-4 text-amber-400" />
-          <span>Giáo Sở Don Bosco Đà Lạt • Niên Khóa 2026 – 2027</span>
+          <span>{parishInfo.parishName} • Niên Khóa {parishInfo.academicYear}</span>
         </div>
       </div>
 
@@ -371,11 +373,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         isOpen={isAcademicYearOpen}
         onClose={() => setIsAcademicYearOpen(false)}
         events={events}
+        parishInfo={parishInfo}
       />
 
       <PublicOfficeContactModal
         isOpen={isOfficeContactOpen}
         onClose={() => setIsOfficeContactOpen(false)}
+        parishInfo={parishInfo}
       />
     </div>
   );

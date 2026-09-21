@@ -11,7 +11,8 @@ import {
   GradeRecord,
   CatechistEvaluation,
   EmailNotification,
-  SpecialPromotion
+  SpecialPromotion,
+  ParishInfo
 } from '../types';
 
 export const INITIAL_USERS: UserAccount[] = [
@@ -1085,3 +1086,43 @@ export const mockCalendarEvents = INITIAL_CALENDAR_EVENTS;
 export const mockEvaluations = INITIAL_EVALUATIONS;
 export const mockNotifications = INITIAL_EMAIL_NOTIFICATIONS;
 export const mockSpecialPromotions = INITIAL_SPECIAL_PROMOTIONS;
+
+export const DEFAULT_PARISH_INFO: ParishInfo = {
+  parishName: 'Giáo Sở Don Bosco Đà Lạt',
+  diocese: 'Giáo phận Đà Lạt',
+  patronSaint: 'Thánh Gioan Bosco (Don Bosco)',
+  patronSaintDay: '31/01',
+  address: '04 Bùi Thị Xuân, Phường 2, TP. Đà Lạt, Tỉnh Lâm Đồng',
+  officeLocation: 'Khu Mục Vụ Giáo Sở (Tầng 1 Dãy nhà Mục Vụ)',
+  hotline: '(0263) 3822 514',
+  mobileZalo: '0918 345 678',
+  email: 'vanphong.giaoly@donboscodalat.vn',
+  websiteUrl: 'https://donboscodalat.vn',
+
+  // Ban Điều Hành & Nhân Sự
+  pastorName: 'Lm. Giuse Nguyễn Văn Hoàng, SDB',
+  vicarOrAssistant: 'Thầy Giuse Phạm Hoàng Tuấn, SDB',
+  catechistLeaderName: 'Thầy GB. Trần Minh Tâm',
+  secretaryName: 'Cô Maria Nguyễn Thị Lan',
+  treasurerName: 'Cô Maria Nguyễn Thị Mai',
+
+  // Niên Khóa & Sứ Mạng
+  academicYear: '2026 – 2027',
+  motto: 'Lý trí – Tôn giáo – Lòng thương mến',
+  rectorMessage: 'Chào đón toàn thể các em thiếu nhi và quý phụ huynh bước vào niên khóa giáo lý mới. Ước mong mỗi ngày học là một niềm vui, một cơ hội để các em lớn lên trong ân sủng Thiên Chúa và tinh thần vui tươi của Cha Thánh Don Bosco.',
+
+  // Lịch Lễ & Học Giáo Lý
+  sundayGatherTime: '07:00',
+  sundayMassTime: '07:15',
+  sundayStudyTime: '08:15 – 09:30',
+  thursdaySacramentMassTime: '17:30',
+  thursdaySacramentStudyTime: '18:15 – 19:15',
+
+  // Giờ làm việc văn phòng
+  officeHoursWeekday: 'Thứ Ba – Thứ Bảy: 08:00 – 11:30 | 14:00 – 17:30',
+  officeHoursSunday: 'Chúa Nhật: 07:30 – 11:30 | 14:30 – 17:00',
+  officeHoursClosed: 'Thứ Hai: Nghỉ theo quy định',
+
+  updatedAt: '2026-08-15 08:00',
+  updatedBy: 'Lm. Giuse Nguyễn Văn Hoàng, SDB'
+};

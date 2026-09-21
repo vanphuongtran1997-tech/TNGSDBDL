@@ -13,18 +13,21 @@ import {
   Heart,
   ChevronRight
 } from 'lucide-react';
-import { CalendarEvent } from '../types';
+import { CalendarEvent, ParishInfo } from '../types';
+import { DEFAULT_PARISH_INFO } from '../data/mockData';
 
 interface PublicAcademicYearModalProps {
   isOpen: boolean;
   onClose: () => void;
   events?: CalendarEvent[];
+  parishInfo?: ParishInfo;
 }
 
 export const PublicAcademicYearModal: React.FC<PublicAcademicYearModalProps> = ({
   isOpen,
   onClose,
-  events = []
+  events = [],
+  parishInfo = DEFAULT_PARISH_INFO
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'overview' | 'schedule' | 'milestones' | 'rules'>('overview');
 
@@ -50,13 +53,13 @@ export const PublicAcademicYearModal: React.FC<PublicAcademicYearModalProps> = (
           <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[11px] font-semibold uppercase tracking-wider">
               <Church className="w-3.5 h-3.5" />
-              <span>Giáo Sở Don Bosco Đà Lạt</span>
+              <span>{parishInfo.parishName}</span>
             </div>
             <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-              Thông Tin Niên Khóa Giáo Lý 2026 – 2027
+              Thông Tin Niên Khóa Giáo Lý {parishInfo.academicYear}
             </h2>
             <p className="text-xs text-slate-300">
-              "Lý trí – Tôn giáo – Lòng thương mến" (Hệ thống dự phòng Thánh Don Bosco)
+              "{parishInfo.motto}" (Hệ thống dự phòng Thánh Don Bosco)
             </p>
           </div>
           <button
@@ -128,13 +131,13 @@ export const PublicAcademicYearModal: React.FC<PublicAcademicYearModalProps> = (
               <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-400/10 to-transparent border border-amber-300 text-slate-800 space-y-2">
                 <div className="flex items-center gap-2 text-amber-900 font-bold text-sm sm:text-base">
                   <Sparkles className="w-5 h-5 text-amber-600 shrink-0" />
-                  <span>Chủ Đề Niên Khóa 2026 – 2027</span>
+                  <span>Chủ Đề Niên Khóa {parishInfo.academicYear}</span>
                 </div>
                 <p className="text-base sm:text-lg font-extrabold text-amber-950 font-serif italic">
-                  "Cùng Don Bosco Lớn Lên Trong Yêu Thương Và Phục Vụ"
+                  "{parishInfo.motto}"
                 </p>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  Đồng hành cùng Giáo Hội hoàn vũ và Tỉnh dòng Salêdiêng Don Bosco Việt Nam, Ban Giáo Lý Don Bosco Đà Lạt hướng đến mục tiêu giáo dục toàn diện thiếu nhi: bồi đắp đức tin, rèn luyện nhân bản và mở rộng tinh thần tông đồ bác ái.
+                  {parishInfo.rectorMessage || 'Đồng hành cùng Giáo Hội hoàn vũ và Tỉnh dòng Salêdiêng Don Bosco Việt Nam, Ban Giáo Lý hướng đến mục tiêu giáo dục toàn diện thiếu nhi: bồi đắp đức tin, rèn luyện nhân bản và mở rộng tinh thần tông đồ bác ái.'}
                 </p>
               </div>
 
@@ -205,9 +208,9 @@ export const PublicAcademicYearModal: React.FC<PublicAcademicYearModalProps> = (
                     <div>
                       <strong className="text-slate-900 block">Dành cho toàn thể các ngành:</strong>
                       <ul className="list-disc list-inside text-slate-600 mt-1 space-y-0.5">
-                        <li><strong>07:00 – 08:00</strong>: Thánh Lễ Thiếu Nhi tại Nhà thờ Don Bosco Đà Lạt</li>
-                        <li><strong>08:00 – 08:15</strong>: Điểm tâm nhẹ / Tập trung sinh hoạt sân Đa Năng</li>
-                        <li><strong>08:15 – 09:30</strong>: Học Giáo Lý theo từng phòng lớp quy định</li>
+                        <li><strong>{parishInfo.sundayGatherTime}</strong>: Tập trung chuẩn bị & tập hát phụng vụ</li>
+                        <li><strong>{parishInfo.sundayMassTime}</strong>: Thánh Lễ Thiếu Nhi tại {parishInfo.parishName}</li>
+                        <li><strong>{parishInfo.sundayStudyTime}</strong>: Học Giáo Lý theo từng phòng lớp quy định</li>
                       </ul>
                     </div>
                   </div>
@@ -217,8 +220,8 @@ export const PublicAcademicYearModal: React.FC<PublicAcademicYearModalProps> = (
                     <div>
                       <strong className="text-slate-900 block">Lớp Bí Tích (Sơ Cấp 2 & Căn Bản 4):</strong>
                       <ul className="list-disc list-inside text-slate-600 mt-1 space-y-0.5">
-                        <li><strong>17:30 – 18:00</strong>: Ôn kinh bổ trợ & tập nghi thức phụng vụ</li>
-                        <li><strong>18:00 – 19:00</strong>: Học Giáo lý chuyên sâu chuẩn bị Rước Lễ & Thêm Sức</li>
+                        <li><strong>{parishInfo.thursdaySacramentMassTime}</strong>: Thánh Lễ / Ôn kinh & tập nghi thức phụng vụ</li>
+                        <li><strong>{parishInfo.thursdaySacramentStudyTime}</strong>: Học Giáo lý chuyên sâu chuẩn bị Rước Lễ & Thêm Sức</li>
                       </ul>
                     </div>
                   </div>

@@ -15,21 +15,27 @@ import {
   ShieldCheck,
   Send
 } from 'lucide-react';
+import { ParishInfo } from '../types';
+import { DEFAULT_PARISH_INFO } from '../data/mockData';
 
 interface PublicOfficeContactModalProps {
   isOpen: boolean;
   onClose: () => void;
+  parishInfo?: ParishInfo;
 }
 
 export const PublicOfficeContactModal: React.FC<PublicOfficeContactModalProps> = ({
   isOpen,
-  onClose
+  onClose,
+  parishInfo = DEFAULT_PARISH_INFO
 }) => {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [messageSent, setMessageSent] = useState(false);
   const [feedbackName, setFeedbackName] = useState('');
   const [feedbackPhone, setFeedbackPhone] = useState('');
   const [feedbackContent, setFeedbackContent] = useState('');
+
+  const cleanHotlineForCall = parishInfo.hotline.replace(/[^0-9]/g, '');
 
   const handleCopy = (text: string, fieldName: string) => {
     navigator.clipboard.writeText(text);
@@ -65,7 +71,7 @@ export const PublicOfficeContactModal: React.FC<PublicOfficeContactModalProps> =
               Thông Tin Liên Hệ Văn Phòng Giáo Lý
             </h2>
             <p className="text-xs text-slate-300">
-              Giáo Sở Don Bosco Đà Lạt • Tiếp nhận và đồng hành cùng Quý Phụ Huynh & Học Sinh
+              {parishInfo.parishName} • Tiếp nhận và đồng hành cùng Quý Phụ Huynh & Học Sinh
             </p>
           </div>
           <button
@@ -89,15 +95,15 @@ export const PublicOfficeContactModal: React.FC<PublicOfficeContactModalProps> =
                   <span>Điện Thoại / Hotline Zalo</span>
                 </div>
                 <div className="font-mono font-bold text-base text-slate-900">
-                  (0263) 3822 514
+                  {parishInfo.hotline}
                 </div>
                 <div className="font-mono text-xs text-slate-600">
-                  Di động / Zalo: 0918 345 678
+                  Di động / Zalo: {parishInfo.mobileZalo}
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => handleCopy('02633822514', 'phone')}
+                onClick={() => handleCopy(cleanHotlineForCall, 'phone')}
                 className="self-start px-2.5 py-1 bg-white hover:bg-amber-100 border border-amber-300 rounded-lg text-[11px] font-semibold text-amber-900 flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 {copiedField === 'phone' ? (
@@ -122,7 +128,7 @@ export const PublicOfficeContactModal: React.FC<PublicOfficeContactModalProps> =
                   <span>Hộp Thư Điện Tử (Email)</span>
                 </div>
                 <div className="font-mono font-semibold text-xs text-slate-900 break-all">
-                  vanphong.giaoly@donboscodalat.vn
+                  {parishInfo.email}
                 </div>
                 <div className="text-[11px] text-slate-500">
                   Hỗ trợ hồ sơ, giải đáp thủ tục giáo lý
@@ -130,7 +136,7 @@ export const PublicOfficeContactModal: React.FC<PublicOfficeContactModalProps> =
               </div>
               <button
                 type="button"
-                onClick={() => handleCopy('vanphong.giaoly@donboscodalat.vn', 'email')}
+                onClick={() => handleCopy(parishInfo.email, 'email')}
                 className="self-start px-2.5 py-1 bg-white hover:bg-indigo-100 border border-indigo-300 rounded-lg text-[11px] font-semibold text-indigo-900 flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 {copiedField === 'email' ? (
@@ -159,15 +165,15 @@ export const PublicOfficeContactModal: React.FC<PublicOfficeContactModalProps> =
               <div className="space-y-1.5 text-slate-600">
                 <div className="flex justify-between border-b border-slate-200/60 pb-1">
                   <span>Thứ Ba – Thứ Bảy:</span>
-                  <strong className="text-slate-900 font-mono">08:00 – 11:30 | 14:00 – 17:30</strong>
+                  <strong className="text-slate-900 font-mono text-[11px]">{parishInfo.officeHoursWeekday.replace(/^Thứ Ba – Thứ Bảy:\s*/, '')}</strong>
                 </div>
                 <div className="flex justify-between border-b border-slate-200/60 pb-1">
                   <span>Chúa Nhật:</span>
-                  <strong className="text-slate-900 font-mono">07:30 – 11:30 | 14:30 – 17:00</strong>
+                  <strong className="text-slate-900 font-mono text-[11px]">{parishInfo.officeHoursSunday.replace(/^Chúa Nhật:\s*/, '')}</strong>
                 </div>
                 <div className="flex justify-between text-rose-600 font-medium pt-0.5">
                   <span>Thứ Hai:</span>
-                  <span>Nghỉ theo quy định</span>
+                  <span>{parishInfo.officeHoursClosed.replace(/^Thứ Hai:\s*/, '') || 'Nghỉ theo quy định'}</span>
                 </div>
               </div>
             </div>
@@ -179,11 +185,11 @@ export const PublicOfficeContactModal: React.FC<PublicOfficeContactModalProps> =
                 <span>Địa Điểm Trực Tiếp</span>
               </div>
               <p className="text-slate-700 leading-relaxed">
-                <strong>Văn phòng Ban Giáo Lý Don Bosco Đà Lạt</strong><br />
-                04 Bùi Thị Xuân, Phường 2, TP. Đà Lạt, Tỉnh Lâm Đồng (Khuôn viên Giáo Sở Don Bosco Đà Lạt).
+                <strong>Văn phòng Ban Giáo Lý {parishInfo.parishName}</strong><br />
+                {parishInfo.address}
               </p>
               <div className="text-[11px] text-slate-500 italic">
-                * Quý phụ huynh vào cổng chính, rẽ phải lên tầng 1 dãy nhà Mục Vụ.
+                * {parishInfo.officeLocation}
               </div>
             </div>
           </div>
@@ -192,20 +198,20 @@ export const PublicOfficeContactModal: React.FC<PublicOfficeContactModalProps> =
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
             <div className="flex items-center gap-2 font-bold text-slate-900">
               <Users className="w-4 h-4 text-indigo-600" />
-              <span>Ban Điều Hành Giáo Lý Niên Khóa 2026 – 2027</span>
+              <span>Ban Điều Hành Giáo Lý Niên Khóa {parishInfo.academicYear}</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
               <div className="bg-white p-2.5 rounded-xl border border-slate-200">
                 <div className="text-[10px] uppercase font-bold text-amber-700">Cha Quản Sở / Giám Đốc</div>
-                <div className="font-bold text-slate-900 mt-0.5">Lm. Giuse Nguyễn Văn Hoàng, SDB</div>
+                <div className="font-bold text-slate-900 mt-0.5">{parishInfo.pastorName}</div>
               </div>
               <div className="bg-white p-2.5 rounded-xl border border-slate-200">
                 <div className="text-[10px] uppercase font-bold text-indigo-700">Trưởng Ban Giáo Lý</div>
-                <div className="font-bold text-slate-900 mt-0.5">Thầy GB. Trần Minh Tâm</div>
+                <div className="font-bold text-slate-900 mt-0.5">{parishInfo.catechistLeaderName}</div>
               </div>
               <div className="bg-white p-2.5 rounded-xl border border-slate-200">
                 <div className="text-[10px] uppercase font-bold text-emerald-700">Thư Ký Tiếp Nhận Hồ Sơ</div>
-                <div className="font-bold text-slate-900 mt-0.5">Cô Maria Nguyễn Thị Lan</div>
+                <div className="font-bold text-slate-900 mt-0.5">{parishInfo.secretaryName}</div>
               </div>
             </div>
           </div>

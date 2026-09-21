@@ -281,6 +281,47 @@ export interface SpecialPromotion {
   notes?: string;
 }
 
+// Thông tin Ban Giáo Lý và Giáo Sở (Quản trị viên có quyền cập nhật)
+export interface ParishInfo {
+  parishName: string; // Tên Giáo Sở (vd: Giáo Sở Don Bosco Đà Lạt)
+  diocese: string; // Giáo phận (vd: Giáo phận Đà Lạt)
+  patronSaint: string; // Thánh Bổn Mạng (vd: Thánh Gioan Bosco)
+  patronSaintDay: string; // Lễ Bổn mạng (vd: 31/01)
+  address: string; // Địa chỉ (vd: 04 Bùi Thị Xuân, Phường 2, TP. Đà Lạt, Tỉnh Lâm Đồng)
+  officeLocation: string; // Vị trí phòng làm việc (vd: Tầng 1 Dãy nhà Mục Vụ Giáo Sở)
+  hotline: string; // SĐT Hotline văn phòng (vd: (0263) 3822 514)
+  mobileZalo: string; // SĐT Di động / Zalo (vd: 0918 345 678)
+  email: string; // Email liên hệ (vd: vanphong.giaoly@donboscodalat.vn)
+  websiteUrl?: string; // Website / Kênh thông tin
+
+  // Ban Điều Hành & Trách Nhiệm
+  pastorName: string; // Cha Quản Sở / Giám Đốc
+  vicarOrAssistant: string; // Thầy Phụ Trách / Đồng Hành
+  catechistLeaderName: string; // Trưởng Ban Giáo Lý
+  secretaryName: string; // Thư Ký tiếp nhận hồ sơ
+  treasurerName: string; // Thủ Quỹ
+
+  // Niên Khóa & Sứ Mạng
+  academicYear: string; // Niên khóa (vd: 2026 – 2027)
+  motto: string; // Khẩu hiệu niên khóa
+  rectorMessage?: string; // Tâm tình đầu niên khóa
+
+  // Lịch Lễ & Học Giáo Lý
+  sundayGatherTime: string; // Giờ tập trung Chúa Nhật (vd: 07:00)
+  sundayMassTime: string; // Giờ Lễ Thiếu Nhi (vd: 07:15)
+  sundayStudyTime: string; // Giờ học Giáo Lý Chúa Nhật (vd: 08:15 – 09:30)
+  thursdaySacramentMassTime: string; // Giờ Lễ Thứ 5 Khối Bí Tích (vd: 17:30)
+  thursdaySacramentStudyTime: string; // Giờ học Thứ 5 Khối Bí Tích (vd: 18:15 – 19:15)
+
+  // Giờ làm việc văn phòng
+  officeHoursWeekday: string;
+  officeHoursSunday: string;
+  officeHoursClosed: string;
+
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 // Dữ liệu sao lưu toàn hệ thống
 export interface SystemBackupData {
   version: string;

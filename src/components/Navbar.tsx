@@ -18,9 +18,11 @@ import {
   Crown,
   LogOut,
   Lock,
-  Sparkles
+  Sparkles,
+  Building2,
+  Church
 } from 'lucide-react';
-import { Role, UserAccount } from '../types';
+import { Role, UserAccount, ParishInfo } from '../types';
 import { ROLE_PERMISSIONS } from '../utils/rolePermissions';
 
 export type ActiveTab = 
@@ -48,6 +50,8 @@ interface NavbarProps {
   onOpenIdSearch: () => void;
   onOpenBackupRestore?: () => void;
   onOpenSpecialPromotion?: () => void;
+  onOpenParishInfoEdit?: () => void;
+  parishInfo?: ParishInfo;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -61,6 +65,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenIdSearch,
   onOpenBackupRestore,
   onOpenSpecialPromotion,
+  onOpenParishInfoEdit,
+  parishInfo,
 }) => {
   const [showUserDropdown, setShowUserDropdown] = React.useState(false);
 
@@ -120,18 +126,31 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-sm tracking-wider uppercase text-amber-300">
-                  Giáo Sở Don Bosco Đà Lạt
+                  {parishInfo?.parishName || 'Giáo Sở Don Bosco Đà Lạt'}
                 </span>
                 <span className="text-xs text-slate-400">|</span>
-                <span className="text-xs text-slate-300 font-medium">Ban Giáo Lý Niên Khóa 2026 – 2027</span>
+                <span className="text-xs text-slate-300 font-medium">Ban Giáo Lý Niên Khóa {parishInfo?.academicYear || '2026 – 2027'}</span>
               </div>
               <p className="text-[11px] text-slate-300 italic">
-                Hệ thống giáo dục dự phòng Don Bosco: "Lý trí – Tôn giáo – Lòng thương mến"
+                {parishInfo?.motto ? `"${parishInfo.motto}"` : 'Hệ thống giáo dục dự phòng Don Bosco: "Lý trí – Tôn giáo – Lòng thương mến"'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Edit Parish & Catechist info button (Admin / Pastor) */}
+            {onOpenParishInfoEdit && (currentUser.role === 'admin' || currentUser.role === 'pastor' || currentUser.role === 'catechist_leader') && (
+              <button
+                id="top-parish-info-edit-btn"
+                onClick={onOpenParishInfoEdit}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold rounded-md shadow-xs transition-colors cursor-pointer"
+                title="Chỉnh sửa thông tin Ban Giáo Lý & Giáo Sở"
+              >
+                <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Thông Tin Giáo Sở</span>
+              </button>
+            )}
+
             {/* Quick Regular Student ID Search Button (Only for authorized roles) */}
             {permissions.canSearchId && (
               <button
@@ -272,6 +291,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                   )}
 
                   <div className="mt-2 pt-2 border-t border-slate-100 px-3 space-y-1">
+                    {/* Only show Parish Info if admin/pastor */}
+                    {onOpenParishInfoEdit && (currentUser.role === 'admin' || currentUser.role === 'pastor' || currentUser.role === 'catechist_leader') && (
+                      <button
+                        onClick={() => {
+                          setShowUserDropdown(false);
+                          onOpenParishInfoEdit();
+                        }}
+                        className="w-full py-1.5 px-2 rounded-lg text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 flex items-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <Building2 className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Sửa Thông Tin Ban GL & Giáo Sở</span>
+                      </button>
+                    )}
+
                     {/* Only show Accounts link if user has permission */}
                     {permissions.canManageAccounts && (
                       <button

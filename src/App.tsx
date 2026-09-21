@@ -11,7 +11,8 @@ import {
   mockEvaluations, 
   mockCalendarEvents, 
   mockNotifications, 
-  mockUsers 
+  mockUsers,
+  DEFAULT_PARISH_INFO
 } from './data/mockData';
 import { 
   Student, 
@@ -28,7 +29,8 @@ import {
   AttendanceStatus, 
   AttendanceTimeSlot,
   ConductViolation,
-  CustomDateSchedule
+  CustomDateSchedule,
+  ParishInfo
 } from './types';
 import { loadCustomSchedules } from './utils/attendanceTimeUtils';
 import { 
@@ -61,6 +63,7 @@ import { AccountManagement } from './components/AccountManagement';
 import { LoginScreen } from './components/LoginScreen';
 import { SwitchAccountModal } from './components/SwitchAccountModal';
 import { CustomScheduleModal } from './components/CustomScheduleModal';
+import { ParishInfoEditModal } from './components/ParishInfoEditModal';
 
 export default function App() {
   // Application Data State
@@ -109,6 +112,29 @@ export default function App() {
   const [reportBookStudent, setReportBookStudent] = useState<Student | null>(null);
   const [transferModalStudent, setTransferModalStudent] = useState<Student | undefined>(undefined);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+
+  // Parish & Catechist Office Information State (Persisted)
+  const [parishInfo, setParishInfo] = useState<ParishInfo>(() => {
+    const saved = localStorage.getItem('donbosco_parish_info');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (err) {
+        console.error('Failed to parse parish info from localStorage', err);
+      }
+    }
+    return DEFAULT_PARISH_INFO;
+  });
+  const [isParishInfoEditOpen, setIsParishInfoEditOpen] = useState(false);
+
+  const handleSaveParishInfo = (updatedInfo: ParishInfo) => {
+    setParishInfo(updatedInfo);
+    try {
+      localStorage.setItem('donbosco_parish_info', JSON.stringify(updatedInfo));
+    } catch (err) {
+      console.error('Failed to persist parish info', err);
+    }
+  };
 
   // Custom Date Schedules (e.g. 7h30 standard cutoff overridden for special days)
   const [customSchedules, setCustomSchedules] = useState<Record<string, CustomDateSchedule>>(() => loadCustomSchedules());
@@ -605,14 +631,26 @@ export default function App() {
   // --- Class Transfer Handlers ---
   const handleTransferIndividual = (studentId: string, toClassId: string, reason: string) => {
     const student = students.find(s => s.id === studentId);
-    if (!student) return;
+    if (!student) {
+      alert('Không tìm thấy học sinh cần chuyển.');
+      return;
+    }
     const oldClassId = student.classId;
+    if (oldClassId === toClassId) {
+      alert('Học sinh đã ở lớp này rồi.');
+      return;
+    }
+    const toClass = classes.find(c => c.id === toClassId);
+    if (!toClass) {
+      alert('Lớp chuyển đến không tồn tại.');
+      return;
+    }
 
     const transferEntry = {
       fromClass: oldClassId,
       toClass: toClassId,
       date: new Date().toISOString().split('T')[0],
-      reason,
+      reason: reason.trim() || 'Chuyển lớp cá nhân',
     };
 
     setStudents(prev => prev.map(s => {
@@ -627,20 +665,56 @@ export default function App() {
     }));
   };
 
-  const handleTransferBatch = (fromClassId: string, toClassId: string, onlyQualified: boolean, reason: string) => {
+  const handleTransferBatch = (
+    fromClassId: string, 
+    toClassId: string, 
+    onlyQualified: boolean, 
+    reason: string,
+    targetStudentIds?: string[]
+  ) => {
+    if (fromClassId === toClassId) {
+      alert('Lớp nguồn và lớp đích không được trùng nhau.');
+      return;
+    }
+    const fromClass = classes.find(c => c.id === fromClassId);
+    const toClass = classes.find(c => c.id === toClassId);
+    if (!fromClass || !toClass) {
+      alert('Không tìm thấy lớp học hợp lệ.');
+      return;
+    }
+
     const today = new Date().toISOString().split('T')[0];
+    const targetSet = targetStudentIds && targetStudentIds.length > 0 
+      ? new Set(targetStudentIds) 
+      : null;
+
     setStudents(prev => prev.map(s => {
-      if (s.classId === fromClassId) {
+      if (s.classId === fromClassId && (!targetSet || targetSet.has(s.id))) {
         const transferEntry = {
           fromClass: fromClassId,
           toClass: toClassId,
           date: today,
-          reason,
+          reason: reason.trim() || 'Lên lớp niên khóa mới',
         };
         return {
           ...s,
           classId: toClassId,
           transferHistory: [...(s.transferHistory || []), transferEntry],
+        };
+      }
+      return s;
+    }));
+  };
+
+  const handleRevertTransfer = (studentId: string, historyIndex: number) => {
+    setStudents(prev => prev.map(s => {
+      if (s.id === studentId && s.transferHistory && s.transferHistory[historyIndex]) {
+        const entryToRevert = s.transferHistory[historyIndex];
+        const updatedHistory = s.transferHistory.filter((_, idx) => idx !== historyIndex);
+        return {
+          ...s,
+          classId: entryToRevert.fromClass,
+          transferHistory: updatedHistory,
         };
       }
       return s;
@@ -723,6 +797,7 @@ export default function App() {
         classes={classes}
         catechists={catechists}
         events={events}
+        parishInfo={parishInfo}
         onLogin={handleLogin} 
       />
     );
@@ -736,6 +811,8 @@ export default function App() {
         setActiveTab={setActiveTab}
         currentUser={currentUser}
         allUsers={allUsers}
+        parishInfo={parishInfo}
+        onOpenParishInfoEdit={() => setIsParishInfoEditOpen(true)}
         onRequestSwitchAccount={handleOpenSwitchAccount}
         onLogout={handleLogout}
         onOpenQRScanner={() => setIsQRScannerOpen(true)}
@@ -880,9 +957,10 @@ export default function App() {
               conducts={conducts}
               attendanceRecords={attendanceRecords}
               initialStudent={transferModalStudent}
-              onClose={() => setIsTransferModalOpen(false)}
+              onClose={() => setActiveTab('students')}
               onTransferIndividual={handleTransferIndividual}
               onTransferBatch={handleTransferBatch}
+              onRevertTransfer={handleRevertTransfer}
             />
           </div>
         )}
@@ -1073,7 +1151,7 @@ export default function App() {
         />
       )}
 
-      {isTransferModalOpen && (
+      {isTransferModalOpen && activeTab !== 'transfer' && (
         <ClassTransferModal
           students={students}
           classes={classes}
@@ -1087,6 +1165,16 @@ export default function App() {
           }}
           onTransferIndividual={handleTransferIndividual}
           onTransferBatch={handleTransferBatch}
+          onRevertTransfer={handleRevertTransfer}
+        />
+      )}
+
+      {isParishInfoEditOpen && (
+        <ParishInfoEditModal
+          isOpen={isParishInfoEditOpen}
+          parishInfo={parishInfo}
+          onSave={handleSaveParishInfo}
+          onClose={() => setIsParishInfoEditOpen(false)}
         />
       )}
 
@@ -1104,11 +1192,11 @@ export default function App() {
       <footer className="bg-slate-900 text-slate-400 text-xs py-4 px-4 border-t border-slate-800 mt-8 print:hidden">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
           <div>
-            <p className="text-white font-medium">Ban Giáo Lý Giáo Sở Don Bosco Đà Lạt</p>
-            <p className="text-[11px] text-slate-400">Niên khóa 2026 – 2027 • Hệ thống Giáo dục Dự phòng Thánh Gioan Bosco</p>
+            <p className="text-white font-medium">{parishInfo.catechistDepartmentName} {parishInfo.parishName}</p>
+            <p className="text-[11px] text-slate-400">Niên khóa {parishInfo.academicYear} • {parishInfo.motto}</p>
           </div>
           <div className="text-[11px] text-slate-500">
-            Ứng dụng Quản lý Thiếu Nhi & Giáo Lý Viên • Đã cấu hình phân quyền đầy đủ
+            {parishInfo.phone} • {parishInfo.email} • {parishInfo.address}
           </div>
         </div>
       </footer>
