@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Users, 
   Search, 
@@ -22,17 +22,37 @@ import {
   Square,
   Eraser,
   FileSpreadsheet,
-  Crown
+  Crown,
+  ShieldCheck,
+  Lock
 } from 'lucide-react';
-import { Student, ClassRoom, Role, SpecialPromotion } from '../types';
+import { Student, ClassRoom, Role, SpecialPromotion, GradeRecord, ConductRecord, AttendanceRecord, UserAccount } from '../types';
+import { 
+  hasParishWideAccess, 
+  canAddStudent, 
+  canEditStudent, 
+  canDeleteStudent, 
+  canTransferStudent, 
+  canSpecialPromotion, 
+  canBatchClear, 
+  canBatchImport,
+  ROLE_PERMISSIONS 
+} from '../utils/rolePermissions';
 import { BatchImportModal } from './BatchImportModal';
 import { BatchFieldClearModal, BatchClearOptions } from './BatchFieldClearModal';
+import { ExcelExportModal } from './ExcelExportModal';
+import { exportStudentsToExcel } from '../utils/excelExport';
 
 interface StudentManagementProps {
   students: Student[];
   classes: ClassRoom[];
   userRole: Role;
+  currentUser?: UserAccount;
+  allParishClasses?: ClassRoom[];
   specialPromotions?: SpecialPromotion[];
+  grades?: GradeRecord[];
+  conducts?: ConductRecord[];
+  attendanceRecords?: AttendanceRecord[];
   onAddStudent: (student: Omit<Student, 'id'>) => void;
   onUpdateStudent: (student: Student) => void;
   onDeleteStudent: (id: string) => void;
@@ -53,7 +73,12 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   students,
   classes,
   userRole,
+  currentUser,
+  allParishClasses = classes,
   specialPromotions = [],
+  grades = [],
+  conducts = [],
+  attendanceRecords = [],
   onAddStudent,
   onUpdateStudent,
   onDeleteStudent,
@@ -66,9 +91,24 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   onOpenIdSearchModal,
   onOpenSpecialPromotion,
 }) => {
+  const isParishWide = hasParishWideAccess(userRole);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchTarget, setSearchTarget] = useState<'all' | 'id_only'>('all');
-  const [selectedClassId, setSelectedClassId] = useState<string>('all');
+  const [selectedClassId, setSelectedClassId] = useState<string>(() => {
+    if (!isParishWide) {
+      return classes[0]?.id || 'all';
+    }
+    return classes.length === 1 ? classes[0]?.id || 'all' : 'all';
+  });
+
+  useEffect(() => {
+    if (!isParishWide && classes.length > 0) {
+      if (selectedClassId === 'all' || !classes.some(c => c.id === selectedClassId)) {
+        setSelectedClassId(classes[0].id);
+      }
+    }
+  }, [isParishWide, classes, selectedClassId]);
+
   const [selectedGender, setSelectedGender] = useState<string>('all');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -76,6 +116,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   // Batch states
   const [isBatchImportOpen, setIsBatchImportOpen] = useState(false);
   const [isBatchClearOpen, setIsBatchClearOpen] = useState(false);
+  const [isExcelExportOpen, setIsExcelExportOpen] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
   // Form State
@@ -98,8 +139,13 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     notes: '',
   });
 
-  const isAdmin = userRole === 'admin' || userRole === 'pastor';
-  const canEdit = isAdmin || userRole === 'catechist_leader' || userRole === 'catechist';
+  const isAdmin = canBatchClear(userRole);
+  const canImport = canBatchImport(userRole);
+  const canAdd = canAddStudent(userRole);
+  const canEdit = canEditStudent(userRole);
+  const canDelete = canDeleteStudent(userRole);
+  const canTransfer = canTransferStudent(userRole);
+  const canSpecial = canSpecialPromotion(userRole);
 
   // Filter students
   const filteredStudents = students.filter(s => {
@@ -111,10 +157,10 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         matchesSearch = s.id.toLowerCase().includes(term);
       } else {
         matchesSearch = 
-          s.fullName.toLowerCase().includes(term) ||
-          s.holyName.toLowerCase().includes(term) ||
-          s.id.toLowerCase().includes(term) ||
-          s.parentPhone.includes(term);
+          (s.fullName || '').toLowerCase().includes(term) ||
+          (s.holyName || '').toLowerCase().includes(term) ||
+          (s.id || '').toLowerCase().includes(term) ||
+          (s.parentPhone || '').includes(term);
       }
     }
 
@@ -247,22 +293,35 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
             <span>In Thẻ Học Sinh & QR</span>
           </button>
 
-          {/* Export button */}
+          {/* Export Excel (.xlsx) button */}
           <button
-            onClick={handleExportData}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
-            title="Xuất dữ liệu hồ sơ học sinh"
+            id="export-excel-btn"
+            onClick={() => setIsExcelExportOpen(true)}
+            className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+            title="Xuất danh sách học sinh và điểm số sang tệp Excel (.xlsx)"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Xuất Dữ Liệu</span>
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Xuất Excel (.xlsx)</span>
           </button>
 
+          {/* Export button (Parish-wide administrators only) */}
+          {isParishWide && (
+            <button
+              onClick={handleExportData}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Xuất dữ liệu hồ sơ học sinh dạng JSON dự phòng"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Sao Lưu JSON</span>
+            </button>
+          )}
+
           {/* Batch Import Button */}
-          {canEdit && (
+          {canImport && (
             <button
               id="batch-import-btn"
               onClick={() => setIsBatchImportOpen(true)}
-              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
               title="Nhập danh sách học sinh hàng loạt từ tệp Excel/CSV hoặc dán văn bản"
             >
               <Upload className="w-3.5 h-3.5" />
@@ -270,33 +329,25 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
             </button>
           )}
 
-          {/* Batch Field Clear Button (Admin) */}
-          <button
-            id="batch-clear-btn"
-            onClick={() => {
-              if (!isAdmin) {
-                alert('Chỉ tài khoản Quản Trị Viên (Admin) mới có quyền truy cập tính năng Xóa trường dữ liệu hàng loạt.');
-                return;
-              }
-              setIsBatchClearOpen(true);
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors ${
-              isAdmin
-                ? 'bg-rose-700 hover:bg-rose-800 text-white'
-                : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200'
-            }`}
-            title="Xóa từng trường dữ liệu hàng loạt dành riêng cho Quản Trị Viên"
-          >
-            <ShieldAlert className="w-3.5 h-3.5" />
-            <span>Xóa Trường Dữ Liệu Hàng Loạt</span>
-          </button>
+          {/* Batch Field Clear Button (Admin & Pastor only) */}
+          {isAdmin && (
+            <button
+              id="batch-clear-btn"
+              onClick={() => setIsBatchClearOpen(true)}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors bg-rose-700 hover:bg-rose-800 text-white cursor-pointer"
+              title="Xóa từng trường dữ liệu hàng loạt dành riêng cho Quản Trị Viên"
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>Xóa Trường Dữ Liệu Hàng Loạt</span>
+            </button>
+          )}
 
-          {/* Add Student Button (Role checked) */}
-          {canEdit && (
+          {/* Add Student Button (Role checked: Admin, Pastor, Leader, Catechist) */}
+          {canAdd && (
             <button
               id="add-student-btn"
               onClick={openAddModal}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Tiếp Nhận Học Sinh Mới</span>
@@ -304,6 +355,24 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
           )}
         </div>
       </div>
+
+      {/* Role-based scope notice for Catechists & Trainees */}
+      {!isParishWide && currentUser && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 flex items-start gap-3 text-xs text-amber-950 shadow-xs">
+          <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-sm text-amber-900 flex items-center gap-2">
+              <span>Phân Quyền: {ROLE_PERMISSIONS[userRole]?.name}</span>
+              <span className="text-[11px] font-medium bg-amber-200/80 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-300">
+                {classes[0]?.name ? `Lớp ${classes[0].name}` : 'Lớp phụ trách'}
+              </span>
+            </div>
+            <p className="text-amber-800 mt-1 leading-relaxed text-[11px]">
+              Tài khoản <strong>{currentUser.holyName ? `${currentUser.holyName} ` : ''}{currentUser.name}</strong> chỉ có quyền xem và quản lý danh sách thiếu nhi trong phạm vi lớp được phân công (<strong>{filteredStudents.length} em</strong>). Dữ liệu của các khối lớp khác và quyền hạn quản lý toàn xứ được bảo mật nghiêm ngặt.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Bulk Selection Action Bar */}
       {selectedStudentIds.length > 0 && (
@@ -316,6 +385,24 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Quick Bulk Excel Export Button */}
+            <button
+              type="button"
+              id="bulk-export-excel-btn"
+              onClick={() => {
+                const selectedList = students.filter(s => selectedStudentIds.includes(s.id));
+                exportStudentsToExcel(selectedList, classes, {
+                  sheetTitle: 'Học Sinh Đã Chọn',
+                  filename: `DanhSach_${selectedStudentIds.length}_HocSinh_DonBosco.xlsx`,
+                });
+              }}
+              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title="Xuất tệp Excel cho các học sinh đang được chọn"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Xuất Excel ({selectedStudentIds.length} em)</span>
+            </button>
+
             <button
               type="button"
               onClick={() => onOpenCardModal(selectedClassId === 'all' ? undefined : selectedClassId, selectedStudentIds)}
@@ -412,18 +499,37 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
           </div>
 
           <div className="md:col-span-3">
-            <select
-              value={selectedClassId}
-              onChange={(e) => setSelectedClassId(e.target.value)}
-              className="w-full py-1.5 px-2.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 font-medium"
-            >
-              <option value="all">Tất cả các khối lớp (12 lớp)</option>
-              {classes.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.isSacramentClass ? '★ (Bí Tích)' : ''}
-                </option>
-              ))}
-            </select>
+            {isParishWide && classes.length > 1 ? (
+              <select
+                value={selectedClassId}
+                onChange={(e) => setSelectedClassId(e.target.value)}
+                className="w-full py-1.5 px-2.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 font-medium"
+              >
+                <option value="all">Tất cả các khối lớp ({classes.length} lớp)</option>
+                {classes.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.isSacramentClass ? '★ (Bí Tích)' : ''}
+                  </option>
+                ))}
+              </select>
+            ) : classes.length > 1 ? (
+              <select
+                value={selectedClassId}
+                onChange={(e) => setSelectedClassId(e.target.value)}
+                className="w-full py-1.5 px-2.5 text-xs border border-amber-400 bg-amber-50/50 rounded-lg text-slate-800 font-medium"
+              >
+                {classes.map(c => (
+                  <option key={c.id} value={c.id}>
+                    Lớp: {c.name} (Phân công)
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="w-full py-1.5 px-2.5 text-xs border border-amber-300 rounded-lg bg-amber-50/80 text-amber-950 font-semibold flex items-center justify-between">
+                <span>Lớp: {classes[0]?.name || 'Phụ trách'} (Được phân công)</span>
+                <Lock className="w-3 h-3 text-amber-700" />
+              </div>
+            )}
           </div>
 
           <div className="md:col-span-3 flex items-center gap-2">
@@ -633,21 +739,21 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                         </button>
 
                         {/* Special Promotion for Admin or Pastor */}
-                        {(userRole === 'admin' || userRole === 'pastor') && onOpenSpecialPromotion && (
+                        {canSpecial && onOpenSpecialPromotion && (
                           <button
                             onClick={() => onOpenSpecialPromotion(st)}
-                            className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded"
+                            className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded cursor-pointer"
                             title="Xét đặc cách lên thẳng lớp trên"
                           >
                             <Crown className="w-4 h-4" />
                           </button>
                         )}
 
-                        {/* Transfer single student */}
-                        {canEdit && (
+                        {/* Transfer single student (Admin, Pastor, Catechist Leader) */}
+                        {canTransfer && (
                           <button
                             onClick={() => onOpenTransferModal(st)}
-                            className="p-1.5 text-slate-600 hover:text-amber-700 hover:bg-amber-50 rounded"
+                            className="p-1.5 text-slate-600 hover:text-amber-700 hover:bg-amber-50 rounded cursor-pointer"
                             title="Chuyển lớp cho học sinh này"
                           >
                             <ArrowRightLeft className="w-4 h-4" />
@@ -658,22 +764,22 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                         {canEdit && (
                           <button
                             onClick={() => openEditModal(st)}
-                            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded"
+                            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded cursor-pointer"
                             title="Chỉnh sửa hồ sơ"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
                         )}
 
-                        {/* Delete (Admin only) */}
-                        {isAdmin && (
+                        {/* Delete (Admin and Pastor only) */}
+                        {canDelete && (
                           <button
                             onClick={() => {
                               if (confirm(`Bạn có chắc chắn muốn xóa học sinh ${st.holyName} ${st.fullName}?`)) {
                                 onDeleteStudent(st.id);
                               }
                             }}
-                            className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded"
+                            className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded cursor-pointer"
                             title="Xóa hồ sơ"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -754,15 +860,24 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
                 <div>
                   <label className="block text-slate-600 font-semibold mb-1">Xếp vào lớp:</label>
-                  <select
-                    value={formData.classId}
-                    onChange={(e) => setFormData({ ...formData, classId: e.target.value })}
-                    className="w-full border border-slate-300 rounded px-2.5 py-1.5"
-                  >
-                    {classes.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                  {classes.length > 1 ? (
+                    <select
+                      value={formData.classId}
+                      onChange={(e) => setFormData({ ...formData, classId: e.target.value })}
+                      className="w-full border border-slate-300 rounded px-2.5 py-1.5"
+                    >
+                      {classes.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="w-full border border-amber-300 bg-amber-50 rounded px-2.5 py-1.5 text-slate-900 font-semibold flex items-center justify-between">
+                      <span>{classes[0]?.name || 'Lớp phụ trách'}</span>
+                      <span className="text-[10px] text-amber-800 font-normal flex items-center gap-1">
+                        <Lock className="w-2.5 h-2.5" /> Lớp phân công
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -928,6 +1043,24 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
             setIsBatchClearOpen(false);
           }}
           onClose={() => setIsBatchClearOpen(false)}
+        />
+      )}
+
+      {/* Excel Export Modal */}
+      {isExcelExportOpen && (
+        <ExcelExportModal
+          isOpen={isExcelExportOpen}
+          onClose={() => setIsExcelExportOpen(false)}
+          students={students}
+          filteredStudents={filteredStudents}
+          selectedStudentIds={selectedStudentIds}
+          classes={classes}
+          grades={grades}
+          conducts={conducts}
+          attendanceRecords={attendanceRecords}
+          specialPromotions={specialPromotions}
+          defaultType="students"
+          currentClassId={selectedClassId}
         />
       )}
     </div>

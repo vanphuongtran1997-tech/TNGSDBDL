@@ -1,8 +1,8 @@
-export type Role = 'admin' | 'pastor' | 'catechist_leader' | 'catechist' | 'trainee' | 'parent';
+export type Role = 'admin' | 'pastor' | 'catechist_leader' | 'secretary' | 'catechist' | 'trainee' | 'parent';
 
 export interface UserAccount {
   id: string;
-  username: string; // Tên đăng nhập (vd: admin_hoang, glv_thimai)
+  username: string; // Tên đăng nhập (vd: admin_hoang, glv_thimai, hoặc mã học sinh DBS-2026-001)
   password?: string; // Mật khẩu đăng nhập
   name: string;
   holyName: string; // Tên Thánh
@@ -10,6 +10,7 @@ export interface UserAccount {
   phone: string;
   role: Role;
   assignedClassId?: string;
+  studentId?: string; // Mã học sinh liên kết nếu là tài khoản phụ huynh (username & password mặc định)
   avatarUrl?: string;
   status: 'active' | 'locked'; // Trạng thái hoạt động hoặc bị khóa
   lastLogin?: string; // Lần đăng nhập gần nhất
@@ -61,6 +62,11 @@ export interface Student {
   firstCommunionDate?: string; // Rước lễ lần đầu
   confirmationDate?: string; // Thêm sức
   godParentName?: string; // Người đỡ đầu
+  sacraments?: {
+    baptism?: { date?: string; place?: string; minister?: string; godparent?: string };
+    firstCommunion?: { date?: string; place?: string; minister?: string };
+    confirmation?: { date?: string; place?: string; minister?: string };
+  };
 
   // Lịch sử chuyển lớp
   transferHistory?: {
@@ -82,6 +88,20 @@ export interface Student {
 export type AttendanceStatus = 'A' | 'B' | 'C' | 'D';
 
 export type AttendanceTimeSlot = 'tap_trung' | 'gio_le' | 'giao_ly';
+
+export interface CustomDateSchedule {
+  date: string; // YYYY-MM-DD
+  sessionType: 'Chúa Nhật' | 'Thứ 5';
+  title?: string; // Tên sự kiện (vd: Lễ Bổn Mạng, Lễ Khai Giảng, Lễ Phục Sinh...)
+  targetTimes: {
+    tap_trung?: string; // HH:mm (mốc đúng giờ/đi muộn giờ tập trung)
+    gio_le?: string;    // HH:mm (mốc đúng giờ/đi muộn giờ lễ)
+    giao_ly?: string;   // HH:mm (mốc đúng giờ/đi muộn giờ học giáo lý)
+  };
+  note?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
 
 export interface AttendanceRecord {
   id: string;
@@ -196,6 +216,8 @@ export interface CatechistEvaluation {
   date: string;
 }
 
+export type CalendarEventType = 'teaching' | 'retreat' | 'meeting' | 'training' | 'liturgy' | 'exam' | 'recollection' | 'community';
+
 export interface CalendarEvent {
   id: string;
   date: string; // YYYY-MM-DD
@@ -208,7 +230,7 @@ export interface CalendarEvent {
   month?: number;
   year?: number;
   isSacramentOnly?: boolean;
-  type?: 'teaching' | 'retreat' | 'meeting' | 'training';
+  type?: CalendarEventType;
   title?: string;
   startTime?: string;
   endTime?: string;
@@ -232,14 +254,18 @@ export interface TuitionItem {
 
 export interface EmailNotification {
   id: string;
-  recipientType: 'all_catechists' | 'class_parents' | 'individual_parent' | 'sacrament_classes';
-  recipientEmails: string[];
+  recipientType?: 'all_catechists' | 'class_parents' | 'individual_parent' | 'sacrament_classes' | string;
+  recipientEmails?: string[];
+  recipientGroup?: string;
+  recipientCount?: number;
   subject: string;
   content: string;
-  category: 'Lịch học' | 'Lịch họp GLV' | 'Báo cáo điểm' | 'Nhắc học phí' | 'Chuyên cần';
+  category?: 'Lịch học' | 'Lịch họp GLV' | 'Báo cáo điểm' | 'Nhắc học phí' | 'Chuyên cần' | string;
   sentAt: string;
-  senderName: string;
-  status: 'Đã gửi' | 'Chờ gửi';
+  senderName?: string;
+  senderRole?: string;
+  targetClassId?: string;
+  status: 'Đã gửi' | 'Chờ gửi' | 'Đã gửi thành công' | string;
 }
 
 // Xét lên lớp đặc cách theo quyền Quản trị viên và Quý Cha

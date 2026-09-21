@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Award, 
   BookOpen, 
@@ -9,7 +9,9 @@ import {
   Download,
   Info,
   ShieldAlert,
-  ChevronDown
+  ChevronDown,
+  FileSpreadsheet,
+  Lock
 } from 'lucide-react';
 import { 
   Student, 
@@ -18,7 +20,8 @@ import {
   ConductRecord, 
   AttendanceRecord, 
   Role, 
-  ConductViolation 
+  ConductViolation,
+  SpecialPromotion 
 } from '../types';
 import { 
   calculateSemesterAcademicAverage, 
@@ -28,6 +31,8 @@ import {
   calculateYearlyAverageHalf,
   evaluatePromotionAndRank
 } from '../utils/calculations';
+import { exportGradesToExcel } from '../utils/excelExport';
+import { ExcelExportModal } from './ExcelExportModal';
 
 interface GradeManagerProps {
   students: Student[];
@@ -36,6 +41,7 @@ interface GradeManagerProps {
   conducts: ConductRecord[];
   attendanceRecords: AttendanceRecord[];
   userRole: Role;
+  specialPromotions?: SpecialPromotion[];
   onUpdateGrade: (grade: Omit<GradeRecord, 'id'>) => void;
   onAddConductViolation: (studentId: string, violation: ConductViolation, semester: 1 | 2, description?: string) => void;
   onRemoveConductViolation: (conductId: string) => void;
@@ -48,6 +54,7 @@ export const GradeManager: React.FC<GradeManagerProps> = ({
   conducts,
   attendanceRecords,
   userRole,
+  specialPromotions = [],
   onUpdateGrade,
   onAddConductViolation,
   onRemoveConductViolation,
@@ -56,6 +63,13 @@ export const GradeManager: React.FC<GradeManagerProps> = ({
   const [selectedSemester, setSelectedSemester] = useState<1 | 2 | 'yearly'>(1);
   const [localScores, setLocalScores] = useState<Record<string, { mid: string; final: string; retest: string }>>({});
   const [activeViolationModalStudent, setActiveViolationModalStudent] = useState<Student | null>(null);
+  const [isExcelExportOpen, setIsExcelExportOpen] = useState(false);
+
+  useEffect(() => {
+    if (classes.length > 0 && (!selectedClassId || !classes.some(c => c.id === selectedClassId))) {
+      setSelectedClassId(classes[0].id);
+    }
+  }, [classes, selectedClassId]);
 
   const selectedClass = classes.find(c => c.id === selectedClassId) || classes[0];
   const classStudents = students.filter(s => s.classId === selectedClass?.id);
@@ -121,6 +135,47 @@ export const GradeManager: React.FC<GradeManagerProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Quick Export Current Class to Excel */}
+            <button
+              type="button"
+              id="quick-export-grades-btn"
+              onClick={() => {
+                const now = new Date();
+                const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+                const semText = selectedSemester === 'yearly' ? 'CaNam' : `HK${selectedSemester}`;
+                exportGradesToExcel(
+                  classStudents,
+                  classes,
+                  grades,
+                  conducts,
+                  attendanceRecords,
+                  specialPromotions,
+                  {
+                    classId: selectedClass.id,
+                    semester: selectedSemester,
+                    filename: `BangDiem_${selectedClass.name.replace(/[^a-zA-Z0-9]/g, '_')}_${semText}_${dateStr}.xlsx`,
+                  }
+                );
+              }}
+              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title={`Xuất bảng điểm lớp ${selectedClass?.name} (${selectedSemester === 'yearly' ? 'Cả Năm' : `HK ${selectedSemester}`}) sang Excel (.xlsx)`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Xuất Excel Lớp Này</span>
+            </button>
+
+            {/* Custom Export Modal Button */}
+            <button
+              type="button"
+              id="open-export-modal-btn"
+              onClick={() => setIsExcelExportOpen(true)}
+              className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title="Mở tùy chọn xuất Excel cho nhiều lớp hoặc toàn trường"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Tùy Chọn Xuất...</span>
+            </button>
+
             <button
               onClick={() => window.print()}
               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors print:hidden"
@@ -150,17 +205,26 @@ export const GradeManager: React.FC<GradeManagerProps> = ({
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
         <div>
           <label className="block text-slate-600 font-semibold mb-1">Chọn Lớp Giáo Lý:</label>
-          <select
-            value={selectedClassId}
-            onChange={(e) => setSelectedClassId(e.target.value)}
-            className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white font-medium text-slate-800"
-          >
-            {classes.map(c => (
-              <option key={c.id} value={c.id}>
-                {c.name} {c.isSacramentClass ? '★ (Bí Tích)' : ''}
-              </option>
-            ))}
-          </select>
+          {classes.length > 1 ? (
+            <select
+              value={selectedClassId}
+              onChange={(e) => setSelectedClassId(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white font-medium text-slate-800 cursor-pointer"
+            >
+              {classes.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.isSacramentClass ? '★ (Bí Tích)' : ''}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="w-full border border-amber-300 bg-amber-50 rounded-lg px-2.5 py-1.5 font-semibold text-slate-900 flex items-center justify-between">
+              <span>{classes[0]?.name || 'Lớp phụ trách'}</span>
+              <span className="text-[10px] text-amber-800 font-normal flex items-center gap-1">
+                <Lock className="w-3 h-3 text-amber-700" /> Lớp phân công
+              </span>
+            </div>
+          )}
         </div>
 
         <div>
@@ -557,6 +621,23 @@ export const GradeManager: React.FC<GradeManagerProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Excel Export Modal */}
+      {isExcelExportOpen && (
+        <ExcelExportModal
+          isOpen={isExcelExportOpen}
+          onClose={() => setIsExcelExportOpen(false)}
+          students={students}
+          filteredStudents={classStudents}
+          classes={classes}
+          grades={grades}
+          conducts={conducts}
+          attendanceRecords={attendanceRecords}
+          specialPromotions={specialPromotions}
+          defaultType="grades"
+          currentClassId={selectedClassId}
+        />
       )}
     </div>
   );

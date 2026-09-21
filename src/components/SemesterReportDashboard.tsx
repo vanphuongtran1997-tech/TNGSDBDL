@@ -20,6 +20,7 @@ import {
   calculateYearlyAverageHalf,
   evaluatePromotionAndRank
 } from '../utils/calculations';
+import { exportGradesToExcel } from '../utils/excelExport';
 import { Crown, Sparkles } from 'lucide-react';
 
 interface SemesterReportDashboardProps {
@@ -127,6 +128,27 @@ export const SemesterReportDashboard: React.FC<SemesterReportDashboardProps> = (
 
   const atRiskStudents = filteredEvals.filter(e => e.finalResult !== 'Được lên lớp');
 
+  const exportExcelXLSX = () => {
+    const targetStudents = filteredEvals.map(e => e.student);
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const classLabel = selectedClassFilter === 'all' ? 'ToanTruong' : `Lop_${selectedClassFilter}`;
+    
+    exportGradesToExcel(
+      targetStudents,
+      classes,
+      grades,
+      conducts,
+      attendanceRecords,
+      specialPromotions,
+      {
+        classId: selectedClassFilter,
+        semester: 'yearly',
+        filename: `BaoCao_TongKet_${classLabel}_DonBosco_${dateStr}.xlsx`,
+      }
+    );
+  };
+
   const exportCSV = () => {
     const headers = ['Mã HS', 'Tên Thánh', 'Họ và Tên', 'Lớp', 'ĐTB Cả Năm', 'CC Cả Năm', 'HK Cả Năm', 'Xếp Loại', 'Kết Quả Lên Lớp', 'Ghi Chú'];
     const rows = filteredEvals.map(e => [
@@ -182,11 +204,22 @@ export const SemesterReportDashboard: React.FC<SemesterReportDashboardProps> = (
             )}
 
             <button
-              onClick={exportCSV}
-              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+              id="export-report-xlsx-btn"
+              onClick={exportExcelXLSX}
+              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title="Xuất bảng báo cáo tổng kết và phân tích số liệu sang tệp Excel đa sheet (.xlsx)"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Xuất Báo Cáo Excel (CSV)</span>
+              <span>Xuất Báo Cáo Excel (.xlsx)</span>
+            </button>
+
+            <button
+              onClick={exportCSV}
+              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
+              title="Xuất dữ liệu thô dạng bảng CSV"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>CSV</span>
             </button>
 
             <button

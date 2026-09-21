@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   QrCode, 
   Calendar, 
@@ -19,17 +19,20 @@ import {
   Info,
   UserX,
   FileEdit,
-  X
+  X,
+  Zap
 } from 'lucide-react';
-import { Student, ClassRoom, AttendanceRecord, AttendanceStatus, Role, AttendanceTimeSlot } from '../types';
+import { Student, ClassRoom, AttendanceRecord, AttendanceStatus, Role, AttendanceTimeSlot, CustomDateSchedule } from '../types';
 import { calculateSemesterAttendanceScore } from '../utils/calculations';
-import { checkAttendanceEditPermission } from '../utils/attendanceTimeUtils';
+import { checkAttendanceEditPermission, getEffectiveTimeConfigs } from '../utils/attendanceTimeUtils';
 
 interface AttendanceManagerProps {
   students: Student[];
   classes: ClassRoom[];
   attendanceRecords: AttendanceRecord[];
   userRole: Role;
+  customSchedules?: Record<string, CustomDateSchedule>;
+  onOpenCustomScheduleModal?: (date: string, sessionType: 'Chúa Nhật' | 'Thứ 5') => void;
   onUpdateAttendance: (
     studentId: string, 
     status: AttendanceStatus, 
@@ -51,6 +54,8 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
   classes,
   attendanceRecords,
   userRole,
+  customSchedules,
+  onOpenCustomScheduleModal,
   onUpdateAttendance,
   onBatchMarkAllA,
   onOpenQRScanner,
@@ -62,6 +67,14 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
   const [activeSessionType, setActiveSessionType] = useState<'Chúa Nhật' | 'Thứ 5'>('Chúa Nhật');
   const [studentFilterQuery, setStudentFilterQuery] = useState<string>('');
 
+  const activeDateConfig = getEffectiveTimeConfigs(activeDate, activeSessionType, customSchedules);
+
+  useEffect(() => {
+    if (classes.length > 0 && (!selectedClassId || !classes.some(c => c.id === selectedClassId))) {
+      setSelectedClassId(classes[0].id);
+    }
+  }, [classes, selectedClassId]);
+
   // Absence recording modal state for Catechists
   const [absenceModalStudent, setAbsenceModalStudent] = useState<Student | null>(null);
   const [absenceStatus, setAbsenceStatus] = useState<'C' | 'D'>('C');
@@ -71,6 +84,13 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
   const [inspectedRecord, setInspectedRecord] = useState<{
     student: Student;
     record: AttendanceRecord;
+  } | null>(null);
+
+  // Quick 1-step Barcode/ID Attendance Input
+  const [quickScanCode, setQuickScanCode] = useState<string>('');
+  const [quickScanToast, setQuickScanToast] = useState<{
+    text: string;
+    isSuccess: boolean;
   } | null>(null);
 
   const selectedClass = classes.find(c => c.id === selectedClassId) || classes[0];
@@ -128,6 +148,74 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
       `Giáo lý viên tự nhập thủ công (Đổi trạng thái: ${nextStatus})`,
       true
     );
+  };
+
+  // Quét mã hoặc nhập mã điểm danh siêu tốc 1 bước - không cần xác nhận
+  const handleQuickScanSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const raw = quickScanCode.trim();
+    if (!raw) return;
+
+    if (!activeDatePermission.canEdit) {
+      setQuickScanToast({
+        text: `Không thể điểm danh: ${activeDatePermission.reason || 'Ngày này đã bị khóa'}`,
+        isSuccess: false
+      });
+      setTimeout(() => setQuickScanToast(null), 3500);
+      return;
+    }
+
+    let cleanId = raw;
+    if (cleanId.startsWith('DBS:')) cleanId = cleanId.split(':')[1] || cleanId;
+    else if (cleanId.startsWith('DBS-STUDENT:')) cleanId = cleanId.split(':')[1] || cleanId;
+
+    const cleanLower = cleanId.toLowerCase().trim();
+    const cleanNormalized = cleanLower.replace(/[-_\s]/g, '');
+
+    const student = students.find(s => {
+      const sIdLower = s.id.toLowerCase().trim();
+      const sIdNorm = sIdLower.replace(/[-_\s]/g, '');
+      return sIdLower === cleanLower ||
+             sIdNorm === cleanNormalized ||
+             sIdLower.endsWith(`-${cleanLower}`) ||
+             sIdLower.endsWith(`-${cleanNormalized}`);
+    });
+
+    if (!student) {
+      setQuickScanToast({
+        text: `Không tìm thấy học sinh với mã: "${raw}". Vui lòng kiểm tra lại.`,
+        isSuccess: false
+      });
+      setTimeout(() => setQuickScanToast(null), 3500);
+      return;
+    }
+
+    // Automatically switch class if student belongs to another class
+    if (student.classId !== selectedClassId) {
+      setSelectedClassId(student.classId);
+    }
+
+    const nowTime = new Date().toTimeString().slice(0, 5);
+
+    // Lưu điểm danh tức thì không cần thêm bất kỳ thao tác nào
+    onUpdateAttendance(
+      student.id,
+      'A',
+      activeDate,
+      activeSessionType,
+      selectedSemester,
+      nowTime,
+      undefined,
+      'Điểm danh nhanh 1 bước',
+      true
+    );
+
+    setQuickScanToast({
+      text: `✓ ĐÃ ĐIỂM DANH XONG CHO: ${student.holyName} ${student.fullName} (${student.id}) • Đạt (Loại A)`,
+      isSuccess: true
+    });
+    setQuickScanCode('');
+    setTimeout(() => setQuickScanToast(null), 3500);
   };
 
   const handleSaveAbsence = (e: React.FormEvent) => {
@@ -223,11 +311,32 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
             <button
               id="qr-scan-attendance-btn"
               onClick={onOpenQRScanner}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+              className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
             >
-              <QrCode className="w-3.5 h-3.5" />
-              <span>Quét Thẻ QR (Tính Giờ Thực)</span>
+              <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+              <span>Quét Thẻ QR (Tự Động 1 Bước)</span>
             </button>
+
+            {onOpenCustomScheduleModal && (
+              <button
+                type="button"
+                id="open-custom-schedule-btn"
+                onClick={() => onOpenCustomScheduleModal(activeDate, activeSessionType)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer ${
+                  activeDateConfig.isCustom
+                    ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 ring-2 ring-amber-300 font-bold'
+                    : 'bg-indigo-700 hover:bg-indigo-600 text-white'
+                }`}
+                title="Cài đặt mốc giờ đúng giờ / đi muộn (dành cho các ngày ngoại thường)"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>
+                  {activeDateConfig.isCustom 
+                    ? `⚡ Giờ Ngoại Thường: ${activeDateConfig.configs.tap_trung.targetTime}` 
+                    : '🕒 Mốc Giờ Ngoại Thường'}
+                </span>
+              </button>
+            )}
 
             {onOpenIdSearch && (
               <button
@@ -296,6 +405,51 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
           </div>
         </div>
 
+        {/* Quick 1-step Barcode/ID attendance input */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-3">
+          <form onSubmit={handleQuickScanSubmit} className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 shrink-0">
+              <Zap className="w-4 h-4 text-emerald-600 fill-emerald-600" />
+              <span>Điểm Danh Nhanh 1 Bước (Quét Barcode / Gõ Mã HS):</span>
+            </div>
+
+            <div className="relative flex-1 min-w-[240px]">
+              <input
+                type="text"
+                value={quickScanCode}
+                onChange={(e) => setQuickScanCode(e.target.value)}
+                placeholder="Quét mã vạch hoặc nhập mã HS (vd: DBS-KT-001, 001) rồi nhấn Enter..."
+                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 shadow-2xs"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={!quickScanCode.trim() || !activeDatePermission.canEdit}
+              className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 disabled:hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Điểm Danh Đạt (A) Ngay</span>
+            </button>
+          </form>
+
+          {/* Quick Scan Toast */}
+          {quickScanToast && (
+            <div className={`mt-2 p-2 rounded-lg text-xs font-bold flex items-center gap-2 animate-in fade-in duration-150 ${
+              quickScanToast.isSuccess
+                ? 'bg-emerald-100 border border-emerald-300 text-emerald-950'
+                : 'bg-rose-100 border border-rose-300 text-rose-950'
+            }`}>
+              {quickScanToast.isSuccess ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              )}
+              <span>{quickScanToast.text}</span>
+            </div>
+          )}
+        </div>
+
         {/* Legend / Tiêu chí đánh giá trích nguyên văn từ tài liệu */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200">
           <div className="flex items-start gap-2">
@@ -348,17 +502,26 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
         <div>
           <label className="block text-slate-600 font-semibold mb-1">Chọn Lớp Giáo Lý:</label>
-          <select
-            value={selectedClassId}
-            onChange={(e) => setSelectedClassId(e.target.value)}
-            className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white font-medium text-slate-800"
-          >
-            {classes.map(c => (
-              <option key={c.id} value={c.id}>
-                {c.name} {c.isSacramentClass ? '★ (Bí Tích)' : ''}
-              </option>
-            ))}
-          </select>
+          {classes.length > 1 ? (
+            <select
+              value={selectedClassId}
+              onChange={(e) => setSelectedClassId(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white font-medium text-slate-800 cursor-pointer"
+            >
+              {classes.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.isSacramentClass ? '★ (Bí Tích)' : ''}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="w-full border border-amber-300 bg-amber-50 rounded-lg px-2.5 py-1.5 font-semibold text-slate-900 flex items-center justify-between">
+              <span>{classes[0]?.name || 'Lớp phụ trách'}</span>
+              <span className="text-[10px] text-amber-800 font-normal flex items-center gap-1">
+                <Lock className="w-3 h-3 text-amber-700" /> Lớp phân công
+              </span>
+            </div>
+          )}
         </div>
 
         <div>
@@ -388,13 +551,38 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
         </div>
 
         <div>
-          <label className="block text-slate-600 font-semibold mb-1">Ngày Điểm Danh Đang Chọn:</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-slate-600 font-semibold">Ngày Điểm Danh Đang Chọn:</label>
+            {onOpenCustomScheduleModal && (
+              <button
+                type="button"
+                onClick={() => onOpenCustomScheduleModal(activeDate, activeSessionType)}
+                className="text-[11px] font-semibold text-blue-700 hover:text-blue-900 underline flex items-center gap-0.5 cursor-pointer"
+                title="Thay đổi mốc thời gian đúng giờ / đi muộn của ngày này"
+              >
+                <span>Đổi mốc giờ</span>
+              </button>
+            )}
+          </div>
           <input
             type="date"
             value={activeDate}
             onChange={(e) => setActiveDate(e.target.value)}
             className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 font-medium"
           />
+          <div className="mt-1 flex items-center justify-between text-[11px]">
+            <span className="text-slate-500">Mốc giờ:</span>
+            <span className={`font-mono font-bold px-1.5 py-0.5 rounded border ${
+              activeDateConfig.isCustom 
+                ? 'bg-amber-100 text-amber-900 border-amber-300' 
+                : 'bg-slate-100 text-slate-700 border-slate-200'
+            }`}>
+              {activeSessionType === 'Chúa Nhật'
+                ? `TT: ${activeDateConfig.configs.tap_trung.targetTime} • Lễ: ${activeDateConfig.configs.gio_le.targetTime} • GL: ${activeDateConfig.configs.giao_ly.targetTime}`
+                : `Giáo lý: ${activeDateConfig.configs.giao_ly.targetTime}`}
+              {activeDateConfig.isCustom ? ' (⚡ Ngoại thường)' : ' (Chuẩn)'}
+            </span>
+          </div>
         </div>
 
         <div>
@@ -404,8 +592,8 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
             onChange={(e) => setActiveSessionType(e.target.value as 'Chúa Nhật' | 'Thứ 5')}
             className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800"
           >
-            <option value="Chúa Nhật">Chúa Nhật (07h30 - 10h30)</option>
-            <option value="Thứ 5">Thứ 5 (Dành cho Lớp Bí Tích)</option>
+            <option value="Chúa Nhật">Chúa Nhật (7h30 tập trung • 8h00 Thánh lễ • 9h15 học giáo lý)</option>
+            <option value="Thứ 5">Thứ 5 (18h00 Học giáo lý - 2 lớp Bí Tích)</option>
           </select>
         </div>
       </div>
@@ -461,20 +649,35 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
                 {/* Dates Columns */}
                 {allDisplayDates.map((d) => {
                   const perm = checkAttendanceEditPermission(d, userRole);
+                  const customSched = customSchedules?.[d];
+                  const displayedTargetTime = activeSessionType === 'Chúa Nhật'
+                    ? (customSched?.configs.tap_trung.targetTime || '07:30')
+                    : (customSched?.configs.giao_ly.targetTime || '18:00');
                   return (
                     <th
                       key={d}
                       className={`py-2 px-1 border-r border-slate-200 text-center min-w-[42px] ${
                         d === activeDate ? 'bg-amber-100/80 font-bold text-amber-900 ring-1 ring-amber-300 inset-0' : ''
                       }`}
-                      title={perm.canEdit ? `Ngày ${d} (Được phép nhập)` : `Ngày ${d}: ${perm.reason}`}
+                      title={
+                        customSched 
+                          ? `Ngày ${d} (⚡ Mốc giờ ngoại thường: ${displayedTargetTime} - ${customSched.title})`
+                          : perm.canEdit ? `Ngày ${d} (Được phép nhập)` : `Ngày ${d}: ${perm.reason}`
+                      }
                     >
-                      <div className="flex items-center justify-center gap-0.5">
-                        <span className="text-[10px] whitespace-nowrap font-mono">
-                          {new Date(d).getDate()}/{new Date(d).getMonth() + 1}
-                        </span>
-                        {!perm.canEdit && (
-                          <Lock className="w-2.5 h-2.5 text-rose-500 shrink-0" />
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="flex items-center justify-center gap-0.5">
+                          <span className="text-[10px] whitespace-nowrap font-mono">
+                            {new Date(d).getDate()}/{new Date(d).getMonth() + 1}
+                          </span>
+                          {!perm.canEdit && (
+                            <Lock className="w-2.5 h-2.5 text-rose-500 shrink-0" />
+                          )}
+                        </div>
+                        {customSched && (
+                          <span className="text-[9px] font-bold text-amber-800 bg-amber-200/90 px-0.5 rounded-xs leading-tight mt-0.5 whitespace-nowrap">
+                            ⚡{displayedTargetTime}
+                          </span>
                         )}
                       </div>
                     </th>

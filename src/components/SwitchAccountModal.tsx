@@ -11,6 +11,7 @@ import {
   LogOut
 } from 'lucide-react';
 import { UserAccount, Role } from '../types';
+import { getDefaultPasswordForRole } from '../data/mockData';
 
 interface SwitchAccountModalProps {
   currentUser: UserAccount;
@@ -49,6 +50,8 @@ export const SwitchAccountModal: React.FC<SwitchAccountModalProps> = ({
         return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-900 border border-amber-300">Cha Quản Sở</span>;
       case 'catechist_leader':
         return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-900 border border-blue-300">Trưởng Ban Giáo Lý</span>;
+      case 'secretary':
+        return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300">Thư Ký Ban Giáo Lý</span>;
       case 'catechist':
         return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">Giáo Lý Viên</span>;
       case 'trainee':
@@ -67,9 +70,25 @@ export const SwitchAccountModal: React.FC<SwitchAccountModalProps> = ({
       return;
     }
 
-    const expectedPassword = selectedUser.password || 'Password123!';
-    if (password !== expectedPassword) {
-      setErrorMessage('Mật khẩu của tài khoản được chọn không chính xác.');
+    const defaultPass = getDefaultPasswordForRole(selectedUser.role, selectedUser.username, selectedUser.studentId);
+    const expectedPassword = selectedUser.password || defaultPass;
+
+    const isMatch = 
+      password === expectedPassword ||
+      password === defaultPass ||
+      (selectedUser.role === 'parent' && (
+        password.trim().toLowerCase() === expectedPassword.toLowerCase() ||
+        (selectedUser.studentId && password.trim().toLowerCase() === selectedUser.studentId.toLowerCase()) ||
+        password.trim().toLowerCase() === selectedUser.username.toLowerCase()
+      )) ||
+      (['catechist', 'trainee'].includes(selectedUser.role) && password.trim().toLowerCase() === selectedUser.username.toLowerCase());
+
+    if (!isMatch) {
+      setErrorMessage(
+        selectedUser.role === 'parent'
+          ? `Mật khẩu không chính xác. Mật khẩu mặc định của phụ huynh là Mã Học Sinh (${selectedUser.studentId || selectedUser.username}).`
+          : 'Mật khẩu của tài khoản được chọn không chính xác.'
+      );
       return;
     }
 
@@ -159,13 +178,21 @@ export const SwitchAccountModal: React.FC<SwitchAccountModalProps> = ({
               </label>
               <button
                 type="button"
-                onClick={() => setPassword(selectedUser.password || 'Password123!')}
-                className="text-[10px] text-amber-600 hover:text-amber-800 font-medium"
-                title="Điền mật khẩu mặc định mẫu"
+                onClick={() => {
+                  const def = selectedUser.password || getDefaultPasswordForRole(selectedUser.role, selectedUser.username, selectedUser.studentId);
+                  setPassword(def);
+                }}
+                className="text-[10px] text-amber-600 hover:text-amber-800 font-medium cursor-pointer"
+                title="Điền mật khẩu mặc định"
               >
-                Gợi ý mật khẩu mẫu
+                {selectedUser.role === 'parent' ? 'Điền Mã Học Sinh' : 'Điền mật khẩu mặc định'}
               </button>
             </div>
+            {selectedUser.role === 'parent' && (
+              <div className="mb-2 text-[11px] text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                💡 Mật khẩu mặc định của phụ huynh là <strong>Mã Học Sinh</strong> ({selectedUser.studentId || selectedUser.username}).
+              </div>
+            )}
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                 <Lock className="w-4 h-4" />

@@ -12,6 +12,7 @@ import {
   Trash2, 
   RefreshCw, 
   Shield, 
+  ShieldCheck, 
   CheckCircle, 
   Eye, 
   EyeOff, 
@@ -21,6 +22,7 @@ import {
   School
 } from 'lucide-react';
 import { UserAccount, Role, ClassRoom } from '../types';
+import { getDefaultPasswordForRole } from '../data/mockData';
 
 interface AccountManagementProps {
   currentUser: UserAccount;
@@ -78,12 +80,13 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
   // Filtered accounts
   const filteredUsers = allUsers.filter(u => {
+    const term = searchTerm.trim().toLowerCase();
     const matchesSearch = 
-      u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.holyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.phone.includes(searchTerm);
+      (u.name || '').toLowerCase().includes(term) ||
+      (u.holyName || '').toLowerCase().includes(term) ||
+      (u.username || '').toLowerCase().includes(term) ||
+      (u.email || '').toLowerCase().includes(term) ||
+      (u.phone || '').includes(term);
     const matchesRole = roleFilter === 'all' || u.role === roleFilter;
     const matchesStatus = statusFilter === 'all' || u.status === statusFilter;
     return matchesSearch && matchesRole && matchesStatus;
@@ -97,6 +100,8 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
         return { label: 'Cha Quản Sở', badge: 'bg-amber-100 text-amber-900 border-amber-300' };
       case 'catechist_leader':
         return { label: 'Trưởng Ban Giáo Lý', badge: 'bg-blue-100 text-blue-900 border-blue-200' };
+      case 'secretary':
+        return { label: 'Thư Ký Ban Giáo Lý', badge: 'bg-indigo-100 text-indigo-900 border-indigo-200' };
       case 'catechist':
         return { label: 'Giáo Lý Viên Phụ Trách', badge: 'bg-emerald-100 text-emerald-900 border-emerald-200' };
       case 'trainee':
@@ -110,7 +115,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
     setEditingUser(null);
     setFormData({
       username: '',
-      password: 'Password123!',
+      password: '',
       holyName: '',
       name: '',
       email: '',
@@ -147,9 +152,11 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
     if (editingUser) {
       // Update existing
+      const finalUsername = formData.role === 'parent' ? formData.username.trim() : formData.username.trim().toLowerCase();
       const updated: UserAccount = {
         ...editingUser,
-        username: formData.username.trim().toLowerCase(),
+        username: finalUsername,
+        studentId: formData.role === 'parent' ? finalUsername : editingUser.studentId,
         name: formData.name.trim(),
         holyName: formData.holyName.trim(),
         email: formData.email.trim(),
@@ -169,9 +176,17 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
         alert('Tên đăng nhập này đã tồn tại trong hệ thống. Vui lòng chọn tên khác!');
         return;
       }
+      const finalUsername = formData.role === 'parent' ? formData.username.trim() : formData.username.trim().toLowerCase();
+      // Default password based on role:
+      // - admin, pastor, catechist_leader, secretary: 'Tngsdbdl26@'
+      // - catechist, trainee: username
+      // - parent: studentId || username
+      const roleDefault = getDefaultPasswordForRole(formData.role, finalUsername, formData.role === 'parent' ? finalUsername : undefined);
+      const defaultPassword = formData.password.trim() || roleDefault;
       onAddUser({
-        username: formData.username.trim().toLowerCase(),
-        password: formData.password.trim() || 'Password123!',
+        username: finalUsername,
+        password: defaultPassword,
+        studentId: formData.role === 'parent' ? finalUsername : undefined,
         name: formData.name.trim(),
         holyName: formData.holyName.trim(),
         email: formData.email.trim(),
@@ -294,6 +309,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
             <option value="admin">Quản Trị Viên (Admin)</option>
             <option value="pastor">Cha Quản Sở</option>
             <option value="catechist_leader">Trưởng Ban Giáo Lý</option>
+            <option value="secretary">Thư Ký Ban Giáo Lý</option>
             <option value="catechist">Giáo Lý Viên Phụ Trách</option>
             <option value="trainee">Dự Trưởng / Huấn Luyện</option>
             <option value="parent">Phụ Huynh / Học Viên</option>
@@ -535,6 +551,21 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
             </div>
 
             <form onSubmit={handleSaveUser} className="p-5 space-y-4">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 space-y-1">
+                <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-amber-600" />
+                  <span>Chính sách mật khẩu mặc định:</span>
+                </div>
+                <ul className="list-disc list-inside text-[11px] text-slate-600 space-y-0.5 ml-1">
+                  <li><strong>Quản trị, Cha sở, Trưởng ban, Thư ký:</strong> Mật khẩu mặc định là <code className="font-mono font-bold text-rose-700 bg-rose-50 px-1 rounded">Tngsdbdl26@</code></li>
+                  <li><strong>Giáo lý viên, Dự trưởng:</strong> Mật khẩu mặc định giống với <strong>Tên đăng nhập</strong></li>
+                  <li><strong>Phụ huynh:</strong> Tên đăng nhập và Mật khẩu mặc định đều là <strong>Mã Học Sinh</strong></li>
+                </ul>
+                <p className="text-[10px] text-slate-500 italic mt-1">
+                  * Khi tạo tài khoản mới, nếu bỏ trống trường mật khẩu, hệ thống sẽ tự động áp dụng mật khẩu mặc định theo vai trò trên.
+                </p>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Username */}
                 <div>
@@ -551,16 +582,23 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                   />
                 </div>
 
-                {/* Password (Optional on Edit) */}
+                {/* Password (Optional on Edit / New) */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {editingUser ? 'Mật Khẩu Mới (Bỏ trống nếu không đổi)' : 'Mật Khẩu Ban Đầu *'}
+                    {editingUser ? 'Mật Khẩu Mới (Bỏ trống nếu không đổi)' : 'Mật Khẩu (Để trống lấy mặc định)'}
                   </label>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
-                      required={!editingUser}
-                      placeholder={editingUser ? '••••••••' : 'Nhập mật khẩu ban đầu'}
+                      placeholder={
+                        editingUser 
+                          ? '••••••••' 
+                          : ['admin', 'pastor', 'catechist_leader', 'secretary'].includes(formData.role)
+                          ? 'Mặc định: Tngsdbdl26@'
+                          : formData.role === 'parent'
+                          ? 'Mặc định: Mã học sinh'
+                          : 'Mặc định: Giống tên đăng nhập'
+                      }
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                       className="w-full px-3 py-1.5 pr-8 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
@@ -645,6 +683,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                     <option value="admin">Quản Trị Viên (Admin)</option>
                     <option value="pastor">Cha Quản Sở</option>
                     <option value="catechist_leader">Trưởng Ban Giáo Lý</option>
+                    <option value="secretary">Thư Ký Ban Giáo Lý</option>
                     <option value="catechist">Giáo Lý Viên Phụ Trách</option>
                     <option value="trainee">Dự Trưởng / Huấn Luyện</option>
                     <option value="parent">Phụ Huynh / Học Viên</option>
@@ -787,17 +826,31 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
               </div>
 
               <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const defaultPass = 'Donbosco2026@';
-                    setNewPassword(defaultPass);
-                    setConfirmPassword(defaultPass);
-                  }}
-                  className="text-blue-600 hover:underline"
-                >
-                  Gợi ý: Đặt mặc định "Donbosco2026@"
-                </button>
+                {targetResetUser.role === 'parent' ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const defaultPass = targetResetUser.studentId || targetResetUser.username;
+                      setNewPassword(defaultPass);
+                      setConfirmPassword(defaultPass);
+                    }}
+                    className="text-amber-700 font-semibold hover:underline cursor-pointer"
+                  >
+                    Gợi ý Phụ huynh: Đặt về Mã Học Sinh "{targetResetUser.studentId || targetResetUser.username}"
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const defaultPass = 'Password123!';
+                      setNewPassword(defaultPass);
+                      setConfirmPassword(defaultPass);
+                    }}
+                    className="text-blue-600 hover:underline cursor-pointer"
+                  >
+                    Gợi ý: Đặt mặc định "Password123!"
+                  </button>
+                )}
               </div>
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">

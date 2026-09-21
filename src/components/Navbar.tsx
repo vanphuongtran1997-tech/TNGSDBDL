@@ -17,9 +17,11 @@ import {
   Database,
   Crown,
   LogOut,
-  Lock
+  Lock,
+  Sparkles
 } from 'lucide-react';
 import { Role, UserAccount } from '../types';
+import { ROLE_PERMISSIONS } from '../utils/rolePermissions';
 
 export type ActiveTab = 
   | 'students'
@@ -62,6 +64,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [showUserDropdown, setShowUserDropdown] = React.useState(false);
 
+  const permissions = ROLE_PERMISSIONS[currentUser.role] || ROLE_PERMISSIONS.parent;
+
   const getRoleBadge = (role: Role) => {
     switch (role) {
       case 'admin':
@@ -70,6 +74,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-900 border border-amber-300">Cha Quản Sở (Toàn quyền)</span>;
       case 'catechist_leader':
         return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-900 border border-blue-300">Trưởng Ban Giáo Lý</span>;
+      case 'secretary':
+        return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300">Thư Ký Ban Giáo Lý</span>;
       case 'catechist':
         return <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">Giáo Lý Viên Phụ Trách</span>;
       case 'trainee':
@@ -79,7 +85,11 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
-  const navItems = [
+  const isParent = currentUser.role === 'parent';
+
+  const allNavItems: { id: ActiveTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { id: 'parent_portal', label: isParent ? 'Thông Tin Con Em' : 'Tra Cứu Phụ Huynh', icon: isParent ? Users : Search },
+    { id: 'calendar', label: isParent ? 'Niên Lịch & Sinh Hoạt' : 'Niên Lịch 2026-2027', icon: Calendar },
     { id: 'students', label: 'Học Sinh & Thẻ QR', icon: Users },
     { id: 'attendance', label: 'Điểm Danh & Chuyên Cần', icon: QrCode },
     { id: 'grades', label: 'Điểm Số & Hạnh Kiểm', icon: Award },
@@ -87,12 +97,15 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'transfer', label: 'Chuyển Lớp', icon: ArrowRightLeft },
     { id: 'tuition', label: 'Học Phí & Quỹ', icon: CreditCard },
     { id: 'catechists', label: 'Giáo Lý Viên & Đánh Giá', icon: GraduationCap },
-    { id: 'calendar', label: 'Niên Lịch 2026-2027', icon: Calendar },
     { id: 'reports', label: 'Báo Cáo & Khen Thưởng', icon: BarChart3 },
     { id: 'notifications', label: 'Nhắc Nhở & Email', icon: Mail },
-    { id: 'parent_portal', label: 'Tra Cứu Phụ Huynh', icon: Search },
     { id: 'accounts', label: 'Tài Khoản & Phân Quyền', icon: UserCog },
   ];
+
+  // Filter navigation items strictly by role permissions and preserve role's defined tab order
+  const authorizedNavItems = permissions.allowedTabs
+    .map(tabId => allNavItems.find(item => item.id === tabId))
+    .filter((item): item is typeof allNavItems[0] => Boolean(item));
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
@@ -100,7 +113,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="bg-slate-900 text-white px-4 py-2 border-b border-amber-500/30">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            {/* Cross / Emblemn */}
+            {/* Cross / Emblem */}
             <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 font-bold text-lg">
               ✝
             </div>
@@ -118,35 +131,39 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Quick Regular Student ID Search Button */}
-            <button
-              id="top-quick-id-search-btn"
-              onClick={onOpenIdSearch}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 text-xs font-semibold rounded-md shadow-xs transition-colors"
-              title="Tìm kiếm thông thường bằng mã học sinh (DBS-KT-xxx)"
-            >
-              <Search className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">Tìm Mã HS</span>
-            </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Quick Regular Student ID Search Button (Only for authorized roles) */}
+            {permissions.canSearchId && (
+              <button
+                id="top-quick-id-search-btn"
+                onClick={onOpenIdSearch}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 text-xs font-semibold rounded-md shadow-xs transition-colors cursor-pointer"
+                title="Tìm kiếm thông thường bằng mã học sinh (DBS-KT-xxx)"
+              >
+                <Search className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Tìm Mã HS</span>
+              </button>
+            )}
 
-            {/* Quick QR Scanner button on top */}
-            <button
-              id="top-quick-scan-btn"
-              onClick={onOpenQRScanner}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold rounded-md shadow-xs transition-colors"
-              title="Quét thẻ QR điểm danh nhanh"
-            >
-              <QrCode className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Quét QR</span>
-            </button>
+            {/* Quick QR Scanner button on top (Only for authorized roles) */}
+            {permissions.canScanQR && (
+              <button
+                id="top-quick-scan-btn"
+                onClick={onOpenQRScanner}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-md shadow-xs transition-colors cursor-pointer"
+                title="Quét thẻ QR điểm danh nhanh"
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Quét QR</span>
+              </button>
+            )}
 
             {/* Special Promotion trigger for Admin / Pastor */}
-            {onOpenSpecialPromotion && (currentUser.role === 'admin' || currentUser.role === 'pastor') && (
+            {onOpenSpecialPromotion && permissions.canSpecialPromotion && (
               <button
                 id="top-special-promotion-btn"
                 onClick={onOpenSpecialPromotion}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-900/80 hover:bg-purple-800 text-purple-200 border border-purple-700 text-xs font-semibold rounded-md shadow-xs transition-colors"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-900/80 hover:bg-purple-800 text-purple-200 border border-purple-700 text-xs font-semibold rounded-md shadow-xs transition-colors cursor-pointer"
                 title="Xét duyệt đặc cách lên thẳng lớp trên (Quyền Cha Quản Sở & Admin)"
               >
                 <Crown className="w-3.5 h-3.5 text-amber-300" />
@@ -154,12 +171,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Backup & Restore Data trigger */}
-            {onOpenBackupRestore && (currentUser.role === 'admin' || currentUser.role === 'pastor') && (
+            {/* Backup & Restore Data trigger (Admin / Pastor only) */}
+            {onOpenBackupRestore && permissions.canBackupRestore && (
               <button
                 id="top-backup-restore-btn"
                 onClick={onOpenBackupRestore}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold rounded-md shadow-xs transition-colors"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold rounded-md shadow-xs transition-colors cursor-pointer"
                 title="Sao lưu & Phục hồi dữ liệu hệ thống (JSON)"
               >
                 <Database className="w-3.5 h-3.5 text-blue-400" />
@@ -172,7 +189,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="user-role-switch-btn"
                 onClick={() => setShowUserDropdown(!showUserDropdown)}
-                className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 transition-colors"
+                className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 transition-colors cursor-pointer"
                 title="Tài khoản đang đăng nhập & Đổi người dùng"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
@@ -197,57 +214,77 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <span className="text-[11px] font-mono text-slate-500">@{currentUser.username}</span>
                       {getRoleBadge(currentUser.role)}
                     </div>
+                    <p className="text-[10px] text-slate-500 mt-1 italic">
+                      {permissions.description}
+                    </p>
                   </div>
 
-                  <div className="px-3.5 py-1 text-[11px] text-slate-500 font-semibold flex items-center justify-between">
-                    <span>Chuyển Tài Khoản Khác:</span>
-                    <span className="text-[10px] text-amber-600 font-normal flex items-center gap-1">
-                      <Lock className="w-3 h-3" /> Yêu cầu mật khẩu
-                    </span>
-                  </div>
+                  {isParent ? (
+                    <div className="p-3 mx-2 my-1.5 bg-amber-50/80 rounded-xl border border-amber-200 text-xs space-y-1">
+                      <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Chế Độ Phụ Huynh Bảo Mật</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        Tài khoản chỉ xem thông tin học tập của con em mình và niên lịch sinh hoạt chung của Giáo Sở Don Bosco.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="px-3.5 py-1 text-[11px] text-slate-500 font-semibold flex items-center justify-between">
+                        <span>Chuyển Tài Khoản Khác:</span>
+                        <span className="text-[10px] text-amber-600 font-normal flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> Yêu cầu mật khẩu
+                        </span>
+                      </div>
 
-                  <div className="max-h-48 overflow-y-auto pr-1">
-                    {allUsers
-                      .filter((u) => u.id !== currentUser.id)
-                      .map((user) => (
-                        <button
-                          key={user.id}
-                          onClick={() => {
-                            setShowUserDropdown(false);
-                            onRequestSwitchAccount(user);
-                          }}
-                          className="w-full text-left px-3.5 py-2 flex items-center gap-2.5 text-xs hover:bg-slate-50 transition-colors group cursor-pointer"
-                          title={`Chuyển sang tài khoản ${user.name} (Cần nhập mật khẩu)`}
-                        >
-                          <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-700 shrink-0 text-xs group-hover:border-amber-400 group-hover:bg-amber-50">
-                            {user.holyName ? user.holyName.charAt(0) : 'U'}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-slate-900 font-medium truncate group-hover:text-amber-800">
-                              {user.name}
-                            </div>
-                            <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                              <span>@{user.username}</span>
-                              <span>•</span>
-                              <span>{user.role}</span>
-                            </div>
-                          </div>
-                          <Lock className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 shrink-0" />
-                        </button>
-                      ))}
-                  </div>
+                      <div className="max-h-48 overflow-y-auto pr-1">
+                        {allUsers
+                          .filter((u) => u.id !== currentUser.id)
+                          .map((user) => (
+                            <button
+                              key={user.id}
+                              onClick={() => {
+                                setShowUserDropdown(false);
+                                onRequestSwitchAccount(user);
+                              }}
+                              className="w-full text-left px-3.5 py-2 flex items-center gap-2.5 text-xs hover:bg-slate-50 transition-colors group cursor-pointer"
+                              title={`Chuyển sang tài khoản ${user.name} (Cần nhập mật khẩu)`}
+                            >
+                              <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-700 shrink-0 text-xs group-hover:border-amber-400 group-hover:bg-amber-50">
+                                {user.holyName ? user.holyName.charAt(0) : 'U'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-slate-900 font-medium truncate group-hover:text-amber-800">
+                                  {user.name}
+                                </div>
+                                <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                                  <span>@{user.username}</span>
+                                  <span>•</span>
+                                  <span>{ROLE_PERMISSIONS[user.role]?.name || user.role}</span>
+                                </div>
+                              </div>
+                              <Lock className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 shrink-0" />
+                            </button>
+                          ))}
+                      </div>
+                    </>
+                  )}
 
                   <div className="mt-2 pt-2 border-t border-slate-100 px-3 space-y-1">
-                    <button
-                      onClick={() => {
-                        setActiveTab('accounts');
-                        setShowUserDropdown(false);
-                      }}
-                      className="w-full py-1.5 px-2 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 flex items-center gap-2 transition-colors cursor-pointer"
-                    >
-                      <UserCog className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Quản Lý Phân Quyền Tài Khoản</span>
-                    </button>
+                    {/* Only show Accounts link if user has permission */}
+                    {permissions.canManageAccounts && (
+                      <button
+                        onClick={() => {
+                          setActiveTab('accounts');
+                          setShowUserDropdown(false);
+                        }}
+                        className="w-full py-1.5 px-2 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 flex items-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <UserCog className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Quản Lý Phân Quyền Tài Khoản</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => {
@@ -278,20 +315,20 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Main navigation menu */}
+      {/* Main navigation menu - ONLY SHOW AUTHORIZED TABS */}
       <div className="max-w-7xl mx-auto px-4 overflow-x-auto scrollbar-none">
         <nav className="flex space-x-1 py-1 min-w-max">
-          {navItems.map((item) => {
+          {authorizedNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
                 id={`nav-tab-${item.id}`}
-                onClick={() => setActiveTab(item.id as ActiveTab)}
-                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
+                onClick={() => setActiveTab(item.id)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
                   isActive
-                    ? 'bg-amber-100/70 text-amber-950 font-semibold border-b-2 border-amber-600'
+                    ? 'bg-amber-100/70 text-amber-950 font-bold border-b-2 border-amber-600'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
               >

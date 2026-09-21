@@ -7,25 +7,46 @@ import {
   ShieldCheck, 
   AlertCircle, 
   Church, 
-  BookOpen, 
-  CheckCircle2,
   ArrowRight,
+  Search,
+  Calendar,
+  PhoneCall,
   Sparkles
 } from 'lucide-react';
-import { UserAccount, Role } from '../types';
+import { UserAccount, Role, Student, ClassRoom, Catechist, CalendarEvent } from '../types';
+import { getDefaultPasswordForRole } from '../data/mockData';
+import { PublicStudentLookupModal } from './PublicStudentLookupModal';
+import { PublicAcademicYearModal } from './PublicAcademicYearModal';
+import { PublicOfficeContactModal } from './PublicOfficeContactModal';
 
 interface LoginScreenProps {
   allUsers: UserAccount[];
+  students?: Student[];
+  classes?: ClassRoom[];
+  catechists?: Catechist[];
+  events?: CalendarEvent[];
   onLogin: (user: UserAccount) => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ allUsers, onLogin }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ 
+  allUsers, 
+  students = [], 
+  classes = [],
+  catechists = [],
+  events = [],
+  onLogin 
+}) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Modals for public access without login
+  const [isStudentLookupOpen, setIsStudentLookupOpen] = useState(false);
+  const [isAcademicYearOpen, setIsAcademicYearOpen] = useState(false);
+  const [isOfficeContactOpen, setIsOfficeContactOpen] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,15 +64,61 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ allUsers, onLogin }) =
 
     // Simulate authenticating against registered users
     setTimeout(() => {
-      const user = allUsers.find(
+      // 1. First look up in existing users by username, studentId, email, or phone
+      let user = allUsers.find(
         u => u.username.toLowerCase() === cleanUsername || 
+             (u.studentId && u.studentId.toLowerCase() === cleanUsername) ||
              u.email.toLowerCase() === cleanUsername || 
              u.phone.replace(/\s+/g, '') === cleanUsername.replace(/\s+/g, '')
       );
 
+      // 2. If not found, check if input matches a Student ID (allowing ANY parent to log in directly)
+      if (!user && students.length > 0) {
+        const cleanNorm = cleanUsername.replace(/[-_\s]/g, '');
+        const matchedStudent = students.find(s => {
+          const sIdLower = s.id.toLowerCase();
+          const sIdNorm = sIdLower.replace(/[-_\s]/g, '');
+          return sIdLower === cleanUsername ||
+                 sIdNorm === cleanNorm ||
+                 sIdLower.endsWith(`-${cleanUsername}`) ||
+                 sIdLower.endsWith(`-${cleanNorm}`);
+        });
+
+        if (matchedStudent) {
+          // Check if parent account exists in allUsers for this student
+          const existing = allUsers.find(u => 
+            u.role === 'parent' && 
+            (u.studentId?.toLowerCase() === matchedStudent.id.toLowerCase() || 
+             u.username.toLowerCase() === matchedStudent.id.toLowerCase())
+          );
+
+          if (existing) {
+            user = existing;
+          } else {
+            // Auto-create/resolve parent account with student ID as username and password
+            user = {
+              id: `usr-parent-${matchedStudent.id.toLowerCase()}`,
+              username: matchedStudent.id,
+              password: matchedStudent.id,
+              name: matchedStudent.parentName 
+                ? `${matchedStudent.parentName} (PH em ${matchedStudent.fullName})`
+                : `Phụ huynh em ${matchedStudent.fullName}`,
+              holyName: matchedStudent.holyName || 'Phụ Huynh',
+              email: matchedStudent.parentEmail || `${matchedStudent.id.toLowerCase()}@phuhuynh.donboscodalat.vn`,
+              phone: matchedStudent.parentPhone || matchedStudent.phone || '',
+              role: 'parent',
+              studentId: matchedStudent.id,
+              status: 'active',
+              lastLogin: new Date().toISOString().replace('T', ' ').slice(0, 16),
+              createdAt: '2026-08-20',
+            };
+          }
+        }
+      }
+
       if (!user) {
         setIsLoading(false);
-        setErrorMessage('Tên đăng nhập không tồn tại trong hệ thống.');
+        setErrorMessage('Tên đăng nhập hoặc Mã học sinh không tồn tại trong hệ thống.');
         return;
       }
 
@@ -61,9 +128,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ allUsers, onLogin }) =
         return;
       }
 
-      // Check password (default password if undefined is Password123!)
-      const expectedPassword = user.password || 'Password123!';
-      if (cleanPassword !== expectedPassword) {
+      // Check password:
+      // Default passwords:
+      // - admin, pastor, catechist_leader, secretary: 'Tngsdbdl26@'
+      // - catechist, trainee: username
+      // - parent: studentId || username
+      const defaultRolePassword = getDefaultPasswordForRole(user.role, user.username, user.studentId);
+      const expectedPassword = user.password || defaultRolePassword;
+
+      const isPasswordMatch = 
+        cleanPassword === expectedPassword ||
+        cleanPassword === defaultRolePassword ||
+        (user.role === 'parent' && (
+          cleanPassword.toLowerCase() === expectedPassword.toLowerCase() ||
+          (user.studentId && cleanPassword.toLowerCase() === user.studentId.toLowerCase()) ||
+          cleanPassword.toLowerCase() === user.username.toLowerCase()
+        )) ||
+        (['catechist', 'trainee'].includes(user.role) && cleanPassword.toLowerCase() === user.username.toLowerCase());
+
+      if (!isPasswordMatch) {
         setIsLoading(false);
         setErrorMessage('Mật khẩu không chính xác. Vui lòng kiểm tra lại.');
         return;
@@ -73,29 +156,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ allUsers, onLogin }) =
       setIsLoading(false);
       onLogin(user);
     }, 250);
-  };
-
-  const handleSelectQuickAccount = (user: UserAccount) => {
-    setUsername(user.username);
-    setPassword(user.password || 'Password123!');
-    setErrorMessage(null);
-  };
-
-  const getRoleLabel = (role: Role) => {
-    switch (role) {
-      case 'admin':
-        return { title: 'Quản Trị Viên (Admin)', badge: 'bg-rose-100 text-rose-800 border-rose-200' };
-      case 'pastor':
-        return { title: 'Cha Quản Sở', badge: 'bg-amber-100 text-amber-900 border-amber-300' };
-      case 'catechist_leader':
-        return { title: 'Trưởng Ban Giáo Lý', badge: 'bg-blue-100 text-blue-900 border-blue-200' };
-      case 'catechist':
-        return { title: 'Giáo Lý Viên Phụ Trách', badge: 'bg-emerald-100 text-emerald-900 border-emerald-200' };
-      case 'trainee':
-        return { title: 'Dự Trưởng / Huấn Luyện', badge: 'bg-purple-100 text-purple-900 border-purple-200' };
-      case 'parent':
-        return { title: 'Phụ Huynh / Học Viên', badge: 'bg-stone-100 text-stone-800 border-stone-200' };
-    }
   };
 
   return (
@@ -108,8 +168,47 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ allUsers, onLogin }) =
         </div>
       </div>
 
+      {/* Public Quick Access Bar (No login required) */}
+      <div className="max-w-xl mx-auto w-full mt-2 mb-1 px-2">
+        <div className="bg-slate-800/90 backdrop-blur-md rounded-2xl p-2.5 sm:p-3 border border-slate-700/80 shadow-xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+          <div className="text-[11px] font-bold text-amber-300 px-1.5 py-0.5 flex items-center gap-1.5 uppercase tracking-wider shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Tiện ích công khai:</span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 flex-1">
+            <button
+              type="button"
+              onClick={() => setIsStudentLookupOpen(true)}
+              className="px-2.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 hover:border-amber-400 text-amber-200 hover:text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer text-center shadow-xs"
+            >
+              <Search className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <span className="truncate font-bold">Tra Cứu Học Sinh</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsAcademicYearOpen(true)}
+              className="px-2.5 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/50 hover:border-indigo-400 text-indigo-200 hover:text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer text-center shadow-xs"
+            >
+              <Calendar className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
+              <span className="truncate">Niên Khóa 26–27</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsOfficeContactOpen(true)}
+              className="px-2.5 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/50 hover:border-emerald-400 text-emerald-200 hover:text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer text-center shadow-xs"
+            >
+              <PhoneCall className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+              <span className="truncate">Văn Phòng Giáo Lý</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Main Login Card */}
-      <div className="max-w-md w-full mx-auto my-6">
+      <div className="max-w-md w-full mx-auto my-4">
         <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
           {/* Header Banner */}
           <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 text-white p-6 text-center relative">
@@ -126,6 +225,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ allUsers, onLogin }) =
 
           {/* Form Content */}
           <div className="p-6 sm:p-8 space-y-5">
+            {/* System Info Banner */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-700 flex items-start gap-2.5 shadow-xs">
+              <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-[11px] leading-relaxed flex-1">
+                <span className="font-bold text-slate-900">Bảo Mật Phân Quyền:</span>
+                <p className="text-slate-600 mt-0.5">
+                  Vui lòng nhập chính xác tên đăng nhập (hoặc Mã học sinh) và mật khẩu được cấp để truy cập đúng quyền hạn.
+                </p>
+              </div>
+            </div>
+
             {errorMessage && (
               <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2 animate-in fade-in duration-200">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -133,20 +243,35 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ allUsers, onLogin }) =
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form id="system-login-form" onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
               {/* Username Input */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Tên Đăng Nhập / Email / Số Điện Thoại
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="login-username-input" className="block text-xs font-semibold text-slate-700">
+                    Tên Đăng Nhập / Mã Học Sinh
+                  </label>
+                  <button
+                    id="btn-public-lookup-student"
+                    type="button"
+                    onClick={() => setIsStudentLookupOpen(true)}
+                    className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <Search className="w-3 h-3 text-amber-600" />
+                    <span>Tra cứu Mã HS</span>
+                  </button>
+                </div>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                     <User className="w-4 h-4" />
                   </div>
                   <input
+                    id="login-username-input"
+                    name="login-username"
                     type="text"
                     required
-                    placeholder="vd: admin_hoang hoặc glv_thimai"
+                    autoComplete="off"
+                    spellCheck="false"
+                    placeholder="Nhập tên đăng nhập hoặc mã học sinh..."
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all font-mono"
@@ -157,30 +282,30 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ allUsers, onLogin }) =
 
               {/* Password Input */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-slate-700">
-                    Mật Khẩu Đăng Nhập
-                  </label>
-                  <span className="text-[11px] text-slate-400">
-                    Mặc định: <code className="text-amber-700 font-bold font-mono">Password123!</code>
-                  </span>
-                </div>
+                <label htmlFor="login-password-input" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Mật Khẩu Đăng Nhập
+                </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                     <Lock className="w-4 h-4" />
                   </div>
                   <input
+                    id="login-password-input"
+                    name="login-password"
                     type={showPassword ? 'text' : 'password'}
                     required
+                    autoComplete="new-password"
+                    spellCheck="false"
                     placeholder="Nhập mật khẩu..."
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all font-mono"
                   />
                   <button
+                    id="btn-toggle-login-password"
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
                     title={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -219,41 +344,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ allUsers, onLogin }) =
                 )}
               </button>
             </form>
-
-            {/* Quick Demo Helper Section */}
-            <div className="pt-4 border-t border-slate-100">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Chọn nhanh tài khoản mẫu:</span>
-                </span>
-                <span className="text-[10px] text-slate-400">Click để điền thông tin</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
-                {allUsers.slice(0, 6).map((u) => {
-                  const roleInfo = getRoleLabel(u.role);
-                  return (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => handleSelectQuickAccount(u)}
-                      className="text-left p-2 rounded-lg border border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 transition-all text-xs group"
-                    >
-                      <div className="font-semibold text-slate-900 group-hover:text-amber-900 truncate">
-                        {u.name}
-                      </div>
-                      <div className="flex items-center justify-between mt-0.5 text-[10px] text-slate-500">
-                        <span className="font-mono font-medium">{u.username}</span>
-                        <span className={`px-1 py-0.2 rounded text-[9px] font-bold ${roleInfo.badge}`}>
-                          {u.role === 'admin' ? 'Admin' : u.role === 'pastor' ? 'Cha Xứ' : u.role === 'catechist_leader' ? 'Trưởng' : 'GLV'}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -263,6 +353,30 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ allUsers, onLogin }) =
         <p>Hệ thống Quản Lý & Điểm Danh Giáo Lý Don Bosco Đà Lạt • Phiên bản Bảo Mật Phân Quyền</p>
         <p className="text-[11px] text-slate-500">Chỉ dành cho Quý Cha, Quý Tu Sĩ, Ban Giáo Lý & Quý Phụ Huynh được cấp quyền truy cập.</p>
       </div>
+
+      {/* Public Modal Overlays (Accessible without logging in) */}
+      <PublicStudentLookupModal
+        isOpen={isStudentLookupOpen}
+        onClose={() => setIsStudentLookupOpen(false)}
+        students={students}
+        classes={classes}
+        catechists={catechists}
+        onSelectForLogin={(studentId) => {
+          setUsername(studentId);
+          setPassword(studentId);
+        }}
+      />
+
+      <PublicAcademicYearModal
+        isOpen={isAcademicYearOpen}
+        onClose={() => setIsAcademicYearOpen(false)}
+        events={events}
+      />
+
+      <PublicOfficeContactModal
+        isOpen={isOfficeContactOpen}
+        onClose={() => setIsOfficeContactOpen(false)}
+      />
     </div>
   );
 };

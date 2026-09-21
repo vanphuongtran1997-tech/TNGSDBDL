@@ -5,6 +5,7 @@ import {
   CalendarEvent, 
   TuitionItem, 
   UserAccount,
+  Role,
   AttendanceRecord,
   ConductRecord,
   GradeRecord,
@@ -17,7 +18,7 @@ export const INITIAL_USERS: UserAccount[] = [
   {
     id: 'usr-admin1',
     username: 'admin_hoang',
-    password: 'Password123!',
+    password: 'Tngsdbdl26@',
     name: 'Lm. Giuse Nguyễn Văn Hoàng, SDB (Quản Trị Viên 1)',
     holyName: 'Linh mục Giuse',
     email: 'quan.so@donboscodalat.vn',
@@ -31,7 +32,7 @@ export const INITIAL_USERS: UserAccount[] = [
   {
     id: 'usr-admin2',
     username: 'admin_tuan',
-    password: 'Password123!',
+    password: 'Tngsdbdl26@',
     name: 'Thầy Giuse Phạm Hoàng Tuấn, SDB (Quản Trị Viên 2)',
     holyName: 'Thầy Giuse',
     email: 'hoangtuan.admin@donboscodalat.vn',
@@ -45,7 +46,7 @@ export const INITIAL_USERS: UserAccount[] = [
   {
     id: 'usr-pastor',
     username: 'pastor_donbosco',
-    password: 'Password123!',
+    password: 'Tngsdbdl26@',
     name: 'Lm. Giuse Nguyễn Văn Hoàng, SDB (Cha Quản Sở)',
     holyName: 'Linh mục Giuse',
     email: 'chaxu.donboscodalat@gmail.com',
@@ -59,7 +60,7 @@ export const INITIAL_USERS: UserAccount[] = [
   {
     id: 'usr-leader',
     username: 'truongban_tam',
-    password: 'Password123!',
+    password: 'Tngsdbdl26@',
     name: 'Gioan Baotixita Trần Minh Tâm',
     holyName: 'Gioan Baotixita',
     email: 'minhtam.glv@donboscodalat.vn',
@@ -71,9 +72,23 @@ export const INITIAL_USERS: UserAccount[] = [
     createdAt: '2026-08-05',
   },
   {
+    id: 'usr-secretary',
+    username: 'thuky_lan',
+    password: 'Tngsdbdl26@',
+    name: 'Anna Maria Hoàng Thị Lan (Thư Ký)',
+    holyName: 'Anna Maria',
+    email: 'thulan.thuky@donboscodalat.vn',
+    phone: '0919 555 666',
+    role: 'secretary',
+    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+    status: 'active',
+    lastLogin: '2026-09-14 10:00',
+    createdAt: '2026-08-05',
+  },
+  {
     id: 'usr-cat1',
     username: 'glv_thimai',
-    password: 'Password123!',
+    password: 'glv_thimai',
     name: 'Maria Nguyễn Thị Mai',
     holyName: 'Maria',
     email: 'thimai.glv@donboscodalat.vn',
@@ -87,7 +102,7 @@ export const INITIAL_USERS: UserAccount[] = [
   {
     id: 'usr-cat2',
     username: 'glv_hoangnam',
-    password: 'Password123!',
+    password: 'glv_hoangnam',
     name: 'Phêrô Lê Hoàng Nam',
     holyName: 'Phêrô',
     email: 'hoangnam.glv@donboscodalat.vn',
@@ -101,7 +116,7 @@ export const INITIAL_USERS: UserAccount[] = [
   {
     id: 'usr-trainee',
     username: 'dutruong_ngocanh',
-    password: 'Password123!',
+    password: 'dutruong_ngocanh',
     name: 'Têrêsa Phạm Ngọc Ánh',
     holyName: 'Têrêsa',
     email: 'ngocanh.dutruong@donboscodalat.vn',
@@ -113,19 +128,76 @@ export const INITIAL_USERS: UserAccount[] = [
     createdAt: '2026-08-15',
   },
   {
+    id: 'usr-parent-001',
+    username: 'DBS-2026-001',
+    password: 'DBS-2026-001',
+    name: 'Giuse Nguyễn Văn Minh (PH em An Bình)',
+    holyName: 'Giuse',
+    email: 'nguyenvanminh@gmail.com',
+    phone: '0912 334 455',
+    role: 'parent',
+    studentId: 'DBS-2026-001',
+    status: 'active',
+    lastLogin: '2026-09-18 19:00',
+    createdAt: '2026-08-20',
+  },
+  {
     id: 'usr-parent',
-    username: 'phuhuynh_hung',
-    password: 'Password123!',
-    name: 'Giuse Nguyễn Văn Hùng (Phụ huynh)',
+    username: 'DBS-2026-004',
+    password: 'DBS-2026-004',
+    name: 'Giuse Nguyễn Văn Hùng (PH em Mai Chi)',
     holyName: 'Giuse',
     email: 'vanhung.phuhuynh@gmail.com',
     phone: '0918 889 900',
     role: 'parent',
+    studentId: 'DBS-2026-004',
     status: 'active',
     lastLogin: '2026-09-05 18:45',
     createdAt: '2026-08-20',
+  },
+  {
+    id: 'usr-parent-010',
+    username: 'DBS-2026-010',
+    password: 'DBS-2026-010',
+    name: 'Giuse Nguyễn Văn Thắng (PH em Hoàng Long)',
+    holyName: 'Giuse',
+    email: 'vanthang.dalat@gmail.com',
+    phone: '0918 223 344',
+    role: 'parent',
+    studentId: 'DBS-2026-010',
+    status: 'active',
+    lastLogin: '2026-09-12 11:20',
+    createdAt: '2026-08-20',
   }
 ];
+
+export const getDefaultPasswordForRole = (role: Role, username: string, studentId?: string): string => {
+  if (['admin', 'pastor', 'catechist_leader', 'secretary'].includes(role)) {
+    return 'Tngsdbdl26@';
+  }
+  if (['catechist', 'trainee'].includes(role)) {
+    return username;
+  }
+  if (role === 'parent') {
+    return studentId || username;
+  }
+  return 'Tngsdbdl26@';
+};
+
+export const createDefaultParentAccount = (student: Student): UserAccount => ({
+  id: `usr-parent-${student.id.toLowerCase()}`,
+  username: student.id,
+  password: student.id,
+  name: student.parentName ? `${student.parentName} (PH em ${student.fullName})` : `Phụ huynh em ${student.fullName}`,
+  holyName: student.holyName || 'Phụ Huynh',
+  email: student.parentEmail || `${student.id.toLowerCase()}@phuhuynh.donboscodalat.vn`,
+  phone: student.parentPhone || student.phone || '',
+  role: 'parent',
+  studentId: student.id,
+  status: 'active',
+  lastLogin: '2026-09-18 19:30',
+  createdAt: '2026-08-20',
+});
 
 export const INITIAL_CLASSES: ClassRoom[] = [
   {
@@ -167,7 +239,7 @@ export const INITIAL_CLASSES: ClassRoom[] = [
     level: 'Sơ Cấp 2',
     academicYear: '2026 - 2027',
     isSacramentClass: true,
-    scheduleDescription: 'Thứ 5 (17h30-19h00) & Chúa Nhật (07h30-10h30)',
+    scheduleDescription: 'Thứ 5 (18h00 Học Giáo Lý) & Chúa Nhật (07h30-10h30)',
     headTeacherId: 'cat-4',
     assistantTeacherIds: ['cat-6'],
     roomNumber: 'Phòng B.201',
@@ -211,7 +283,7 @@ export const INITIAL_CLASSES: ClassRoom[] = [
     level: 'Căn Bản 4',
     academicYear: '2026 - 2027',
     isSacramentClass: true,
-    scheduleDescription: 'Thứ 5 (17h30-19h00) & Chúa Nhật (07h30-10h30)',
+    scheduleDescription: 'Thứ 5 (18h00 Học Giáo Lý) & Chúa Nhật (07h30-10h30)',
     headTeacherId: 'cat-2',
     assistantTeacherIds: ['cat-10'],
     roomNumber: 'Phòng C.102',
@@ -404,6 +476,23 @@ export const INITIAL_STUDENTS: Student[] = [
     subParish: 'Giáo họ Chi Lăng',
     baptismDate: '2021-03-25',
     godParentName: 'Têrêsa Bùi Thu Trang',
+  },
+  {
+    id: 'DBS-2026-004',
+    holyName: 'Maria',
+    fullName: 'Nguyễn Mai Chi',
+    gender: 'Nữ',
+    dob: '2021-06-10',
+    classId: 'cls-kt1',
+    phone: '0918 889 900',
+    parentName: 'Giuse Nguyễn Văn Hùng',
+    parentPhone: '0918 889 900',
+    parentEmail: 'vanhung.phuhuynh@gmail.com',
+    address: '28 Trần Phú, Phường 3, TP. Đà Lạt',
+    subParish: 'Giáo họ Trại Mát',
+    baptismDate: '2021-07-20',
+    godParentName: 'Maria Hoàng Yến',
+    notes: 'Em gái của Nguyễn Văn Bảo (lớp Sơ Cấp 2)',
   },
 
   // Sơ Cấp 2 (Bí Tích Rước Lễ Lần Đầu)
@@ -944,22 +1033,28 @@ export const INITIAL_EMAIL_NOTIFICATIONS: EmailNotification[] = [
     id: 'mail-001',
     recipientType: 'all_catechists',
     recipientEmails: ['thimai.glv@donboscodalat.vn', 'hoangnam.glv@donboscodalat.vn', 'ngocanh.dutruong@donboscodalat.vn'],
+    recipientGroup: 'Toàn bộ Giáo lý viên & Ban Giảng huấn',
+    recipientCount: 18,
     subject: '[GIÁO SỞ DON BOSCO ĐÀ LẠT] Nhắc họp Giáo lý viên sau lễ Chúa Nhật (10h30)',
     content: 'Kính gửi Quý Giáo lý viên và Ban Giảng huấn,\n\nSau giờ dạy giáo lý Chúa Nhật tuần này, lúc 10h30, kính mời Quý Anh Chị tập trung tại Hội trường C.103 để họp định kỳ triển khai nội dung tuần tới và báo cáo chuyên cần.\n\nTrong Chúa Kitô và Don Bosco,\nBan Giáo Lý Giáo Sở',
     category: 'Lịch họp GLV',
     sentAt: '2026-09-18 14:00',
     senderName: 'Ban Giáo Lý',
+    senderRole: 'Ban Điều Hành Giáo Lý',
     status: 'Đã gửi',
   },
   {
     id: 'mail-002',
     recipientType: 'sacrament_classes',
     recipientEmails: ['vanthang.dalat@gmail.com', 'vanhung.phuhuynh@gmail.com'],
+    recipientGroup: 'Phụ huynh Khối Lớp Bí Tích (Sơ Cấp 2 & Căn Bản 4)',
+    recipientCount: 52,
     subject: '[GIÁO SỞ DON BOSCO] Nhắc lịch học Thứ 5 dành cho Lớp Bí Tích Sơ Cấp 2 và Căn Bản 4',
     content: 'Kính gửi Quý Phụ huynh lớp Bí Tích,\n\nXin kính nhắc Quý Phụ huynh nhắc nhở các em thiếu nhi tham dự Thánh Lễ lúc 17h30 và giờ học giáo lý lúc 18h10 thứ Năm tuần này theo đúng quy chế đào tạo.\n\nTrân trọng cảm ơn sự cộng tác của gia đình!',
     category: 'Lịch học',
     sentAt: '2026-09-22 09:30',
     senderName: 'Ban Giáo Lý',
+    senderRole: 'Ban Điều Hành Giáo Lý',
     status: 'Đã gửi',
   }
 ];

@@ -1,11 +1,10 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { 
   X, 
   Camera, 
   RefreshCw, 
   CheckCircle2, 
   AlertCircle, 
-  Volume2, 
   Keyboard, 
   Clock, 
   Timer, 
@@ -16,18 +15,29 @@ import {
   Search,
   Sparkles,
   Check,
-  Smartphone
+  Smartphone,
+  CheckCheck,
+  Lock,
+  Zap,
+  Volume2
 } from 'lucide-react';
 import jsQR from 'jsqr';
-import { Student, AttendanceStatus, ClassRoom, AttendanceTimeSlot } from '../types';
+import { Student, AttendanceStatus, ClassRoom, AttendanceTimeSlot, UserAccount, CustomDateSchedule } from '../types';
 import { 
   evaluateAttendanceTime, 
-  AttendanceTimeEvaluation 
+  AttendanceTimeEvaluation,
+  getEffectiveTimeConfigs,
+  loadCustomSchedules
 } from '../utils/attendanceTimeUtils';
+import { CustomScheduleModal } from './CustomScheduleModal';
 
 interface QRScannerModalProps {
   students: Student[];
   classes: ClassRoom[];
+  currentUser?: UserAccount;
+  authorizedClassIds?: string[];
+  customSchedules?: Record<string, CustomDateSchedule>;
+  onScheduleUpdated?: (updated: Record<string, CustomDateSchedule>) => void;
   onAttendanceMarked: (
     studentId: string, 
     status: AttendanceStatus, 
@@ -43,12 +53,29 @@ interface QRScannerModalProps {
 export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   students,
   classes,
+  currentUser,
+  authorizedClassIds,
+  customSchedules,
+  onScheduleUpdated,
   onAttendanceMarked,
   onClose,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const authorizedClassIdsRef = useRef<string[] | undefined>(authorizedClassIds);
+  authorizedClassIdsRef.current = authorizedClassIds;
+
+  const accessibleStudents = useMemo(() => {
+    if (!authorizedClassIds || authorizedClassIds.length === 0) return students;
+    return students.filter(s => authorizedClassIds.includes(s.classId));
+  }, [students, authorizedClassIds]);
+
+  const assignedClassName = useMemo(() => {
+    if (!authorizedClassIds || authorizedClassIds.length === 0) return null;
+    return classes.find(c => authorizedClassIds.includes(c.id))?.name || 'Lớp phụ trách';
+  }, [classes, authorizedClassIds]);
 
   const [activeMode, setActiveMode] = useState<'camera' | 'upload' | 'manual'>('camera');
   const [manualIdInput, setManualIdInput] = useState<string>('');
@@ -76,9 +103,19 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
   // Camera State
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
+  const [isCameraLoading, setIsCameraLoading] = useState<boolean>(true);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [flashSuccess, setFlashSuccess] = useState<boolean>(false);
+  const [cameraRestartCount, setCameraRestartCount] = useState<number>(0);
+
+  // Non-blocking toast notifications for camera/scan (replaces blocking alert dialogs)
+  const [scanNotification, setScanNotification] = useState<{
+    title: string;
+    message: string;
+    type: 'error' | 'warning' | 'info';
+  } | null>(null);
 
   const [lastScannedResult, setLastScannedResult] = useState<{
     student: Student;
@@ -130,35 +167,103 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  // Custom schedule state & effective configs
+  const [internalCustomSchedules, setInternalCustomSchedules] = useState<Record<string, CustomDateSchedule>>(() => {
+    return customSchedules || loadCustomSchedules();
+  });
+
+  useEffect(() => {
+    if (customSchedules) {
+      setInternalCustomSchedules(customSchedules);
+    }
+  }, [customSchedules]);
+
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
+
+  const effectiveScheduleInfo = getEffectiveTimeConfigs(sessionDate, sessionType, internalCustomSchedules);
+
+  const effectiveConfigsRef = useRef(effectiveScheduleInfo.configs);
+  const customScheduleRef = useRef(effectiveScheduleInfo.customSchedule);
+
+  useEffect(() => {
+    effectiveConfigsRef.current = effectiveScheduleInfo.configs;
+    customScheduleRef.current = effectiveScheduleInfo.customSchedule;
+  }, [effectiveScheduleInfo]);
+
   // Real-time evaluation calculation for display
   const currentEvaluation: AttendanceTimeEvaluation = evaluateAttendanceTime(
     effectiveScanTime,
     sessionType,
-    timeSlotMode
+    timeSlotMode,
+    effectiveScheduleInfo.configs,
+    effectiveScheduleInfo.customSchedule
   );
 
-  // Sound beep using Web Audio API
-  const playBeep = (isLate = false) => {
+  // Sound chime using Web Audio API (POS dual-tone scanner sound)
+  const playBeep = (type: 'on_time' | 'late' | 'error' = 'on_time') => {
     try {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return;
       const audioCtx = new AudioCtx();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = isLate ? 'triangle' : 'sine';
-      osc.frequency.setValueAtTime(isLate ? 440 : 880, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.25);
+
+      if (type === 'error') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+        return;
+      }
+
+      if (type === 'late') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(440, audioCtx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.22, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.28);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.28);
+        return;
+      }
+
+      // Success 'on_time': crisp supermarket/scanner two-tone chime (880Hz -> 1318.5Hz)
+      const now = audioCtx.currentTime;
+      const osc1 = audioCtx.createOscillator();
+      const gain1 = audioCtx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(880, now);
+      gain1.gain.setValueAtTime(0.2, now);
+      gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+      osc1.connect(gain1);
+      gain1.connect(audioCtx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.1);
+
+      const osc2 = audioCtx.createOscillator();
+      const gain2 = audioCtx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(1318.51, now + 0.08);
+      gain2.gain.setValueAtTime(0.25, now + 0.08);
+      gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+      osc2.connect(gain2);
+      gain2.connect(audioCtx.destination);
+      osc2.start(now + 0.08);
+      osc2.stop(now + 0.25);
     } catch {
       // Audio not permitted or supported
     }
   };
 
-  // Process a detected student code
+  // Process a detected student code - TỰ ĐỘNG ĐIỂM DANH 1 BƯỚC KHÔNG CẦN BẤM XÁC NHẬN
   const handleStudentDetected = useCallback((rawDetected: string) => {
     let cleanId = rawDetected.trim();
 
@@ -180,20 +285,51 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
     cleanId = cleanId.trim();
 
-    // Match student
-    const student = studentsRef.current.find(
-      s => s.id.toLowerCase().trim() === cleanId.toLowerCase() ||
-           s.id.toLowerCase().trim().replace(/[-_]/g, '') === cleanId.toLowerCase().replace(/[-_]/g, '')
-    );
+    // Match student flexibly
+    const cleanLower = cleanId.toLowerCase();
+    const cleanNormalized = cleanLower.replace(/[-_\s]/g, '');
+
+    const student = studentsRef.current.find(s => {
+      const sIdLower = s.id.toLowerCase().trim();
+      const sIdNorm = sIdLower.replace(/[-_\s]/g, '');
+      return sIdLower === cleanLower ||
+             sIdNorm === cleanNormalized ||
+             sIdLower.endsWith(`-${cleanLower}`) ||
+             sIdLower.endsWith(`-${cleanNormalized}`);
+    });
 
     if (!student) {
-      alert(`Không tìm thấy học sinh có mã thẻ: "${rawDetected}". Vui lòng kiểm tra lại mã hoặc in lại thẻ mới.`);
+      playBeep('error');
+      setScanNotification({
+        title: 'Mã Thẻ Không Tồn Tại',
+        message: `Mã nhận diện "${rawDetected}" không khớp với học sinh nào trong danh sách. Vui lòng kiểm tra lại.`,
+        type: 'error'
+      });
+      setTimeout(() => {
+        setScanNotification(prev => (prev?.type === 'error' ? null : prev));
+      }, 3000);
+      return;
+    }
+
+    // Role-based permission enforcement: Check if student belongs to teacher's authorized class
+    if (authorizedClassIdsRef.current && authorizedClassIdsRef.current.length > 0 && !authorizedClassIdsRef.current.includes(student.classId)) {
+      const studentClass = classes.find(c => c.id === student.classId);
+      const assignedClass = classes.find(c => authorizedClassIdsRef.current?.includes(c.id));
+      playBeep('error');
+      setScanNotification({
+        title: 'Giới Hạn Phân Quyền Lớp',
+        message: `Học sinh ${student.holyName} ${student.fullName} thuộc lớp ${studentClass?.name || student.classId}. Bạn chỉ được điểm danh cho lớp ${assignedClass?.name || 'phụ trách'}.`,
+        type: 'warning'
+      });
+      setTimeout(() => {
+        setScanNotification(prev => (prev?.type === 'warning' ? null : prev));
+      }, 3500);
       return;
     }
 
     let finalStatus: AttendanceStatus = selectedStatusRef.current;
     let slotLabel = 'Thủ công';
-    let reason = 'Ghi nhận thủ công';
+    let reason = 'Ghi nhận tự động';
     let isLate = false;
     let slot: AttendanceTimeSlot | undefined = undefined;
 
@@ -201,7 +337,9 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       const evaluation = evaluateAttendanceTime(
         effectiveScanTimeRef.current, 
         sessionTypeRef.current, 
-        timeSlotModeRef.current
+        timeSlotModeRef.current,
+        effectiveConfigsRef.current,
+        customScheduleRef.current
       );
       finalStatus = evaluation.status;
       slotLabel = evaluation.slotLabel;
@@ -210,8 +348,14 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       slot = evaluation.slot;
     }
 
-    playBeep(isLate);
+    playBeep(isLate ? 'late' : 'on_time');
 
+    // Haptic vibration feedback on mobile
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(isLate ? [80, 40, 80] : 100);
+    }
+
+    // TỰ ĐỘNG ĐIỂM DANH VÀ LƯU VÀO SỔ TỨC THÌ (KHÔNG CẦN BƯỚC XÁC NHẬN NÀO)
     onAttendanceMarkedRef.current(
       student.id, 
       finalStatus, 
@@ -231,6 +375,10 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       isLate,
     };
 
+    setScanNotification(null);
+    setFlashSuccess(true);
+    setTimeout(() => setFlashSuccess(false), 2500);
+
     setLastScannedResult(result);
     setRecentLogs(prev => [
       {
@@ -239,9 +387,51 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         time: effectiveScanTimeRef.current,
         reason,
       },
-      ...prev.slice(0, 7),
+      ...prev.slice(0, 8),
     ]);
-  }, []);
+  }, [classes]);
+
+  // Hardware barcode / QR scanner listener (USB / Bluetooth barcode gun)
+  useEffect(() => {
+    let keyBuffer = '';
+    let lastKeyTimestamp = Date.now();
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+
+      const now = Date.now();
+      const elapsed = now - lastKeyTimestamp;
+      lastKeyTimestamp = now;
+
+      if (e.key === 'Enter') {
+        const trimmed = keyBuffer.trim();
+        if (trimmed.length >= 3) {
+          // Hardware scanner detected!
+          e.preventDefault();
+          keyBuffer = '';
+          handleStudentDetected(trimmed);
+        } else {
+          keyBuffer = '';
+        }
+        return;
+      }
+
+      // Barcode scanners input characters in rapid bursts (< 60ms). Human typing is > 100ms.
+      if (elapsed > 200) {
+        keyBuffer = '';
+      }
+
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        keyBuffer += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [handleStudentDetected]);
 
   // Enumerate cameras
   useEffect(() => {
@@ -251,97 +441,246 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         setAvailableCameras(videoDevices);
         if (videoDevices.length > 0 && !selectedCameraId) {
           // Prefer back camera if available
-          const backCam = videoDevices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('sau') || d.label.toLowerCase().includes('environment'));
+          const backCam = videoDevices.find(d => 
+            d.label.toLowerCase().includes('back') || 
+            d.label.toLowerCase().includes('sau') || 
+            d.label.toLowerCase().includes('environment')
+          );
           setSelectedCameraId(backCam ? backCam.deviceId : videoDevices[0].deviceId);
         }
       }).catch(() => {});
     }
-  }, []);
+  }, [selectedCameraId]);
 
-  // Start Camera Stream - Robust decoupled implementation
+  // Start Camera Stream & Scanning Loop
   useEffect(() => {
     if (activeMode !== 'camera') {
       setIsCameraActive(false);
+      setIsCameraLoading(false);
       return;
     }
 
     let currentStream: MediaStream | null = null;
     let animationFrameId: number;
     let isMounted = true;
-
-    async function startCamera() {
-      try {
-        setCameraError(null);
-        let constraints: MediaStreamConstraints = {
-          video: selectedCameraId 
-            ? { deviceId: { exact: selectedCameraId }, width: { ideal: 640 }, height: { ideal: 480 } }
-            : { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
-        };
-
-        try {
-          currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-        } catch (firstErr) {
-          // Fallback if facingMode environment or exact deviceId failed
-          console.warn('First camera constraint failed, falling back to basic video...', firstErr);
-          currentStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        }
-
-        if (!isMounted) {
-          if (currentStream) {
-            currentStream.getTracks().forEach(t => t.stop());
-          }
-          return;
-        }
-
-        if (videoRef.current && currentStream) {
-          videoRef.current.srcObject = currentStream;
-          videoRef.current.setAttribute('playsinline', 'true');
-          await videoRef.current.play();
-          setIsCameraActive(true);
-          requestAnimationFrame(scanLoop);
-        }
-      } catch (err) {
-        if (!isMounted) return;
-        setIsCameraActive(false);
-        setCameraError('Không thể mở Camera. Vui lòng cấp quyền truy cập Camera trên trình duyệt, hoặc chuyển sang Chế độ Tải ảnh QR / Nhập mã học sinh.');
-      }
-    }
-
     let lastDetectedId = '';
     let lastDetectedTime = 0;
 
-    function scanLoop() {
-      if (!isMounted) return;
+    // Check BarcodeDetector native API
+    let barcodeDetector: any = null;
+    if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+      try {
+        barcodeDetector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+      } catch {
+        barcodeDetector = null;
+      }
+    }
 
-      if (videoRef.current && canvasRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    async function startCamera() {
+      setIsCameraLoading(true);
+      setCameraError(null);
 
-        if (ctx) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      try {
+        if (!navigator?.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setIsCameraActive(false);
+          setIsCameraLoading(false);
+          setCameraError('Trình duyệt không hỗ trợ truy cập Camera trực tiếp. Vui lòng chuyển sang chế độ Tải Ảnh QR hoặc Nhập Mã Học Sinh để điểm danh.');
+          return;
+        }
 
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = jsQR(imageData.data, imageData.width, imageData.height, {
-            inversionAttempts: 'attemptBoth',
+        // Pre-check if hardware video devices exist
+        if (navigator.mediaDevices.enumerateDevices) {
+          try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoInputs = devices.filter(d => d.kind === 'videoinput');
+            // If device enumeration lists hardware devices but explicitly 0 video cameras
+            if (devices.length > 0 && videoInputs.length === 0) {
+              if (!isMounted) return;
+              setIsCameraActive(false);
+              setIsCameraLoading(false);
+              console.warn('No video input hardware detected on this device.');
+              setCameraError('Không tìm thấy thiết bị Camera trên máy (chưa cắm webcam). Bạn có thể dùng chế độ "Tải Ảnh QR" hoặc "Nhập Mã Học Sinh" ở phía trên để điểm danh.');
+              return;
+            }
+          } catch {
+            // Ignore enumeration errors and proceed to getUserMedia
+          }
+        }
+
+        let stream: MediaStream | null = null;
+
+        // 1. Try exact camera if selected
+        if (selectedCameraId) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                deviceId: { exact: selectedCameraId },
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+              }
+            });
+          } catch (camErr) {
+            console.warn('Selected device camera failed, attempting fallback...', camErr);
+          }
+        }
+
+        // 2. Try back-facing environment camera
+        if (!stream) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+              }
+            });
+          } catch (envErr) {
+            console.warn('FacingMode environment failed, attempting generic video...', envErr);
+          }
+        }
+
+        // 3. Fallback to basic generic video
+        if (!stream) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          } catch (genericErr) {
+            console.warn('Generic getUserMedia failed:', genericErr);
+            throw genericErr;
+          }
+        }
+
+        currentStream = stream;
+
+        if (!isMounted) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        if (videoRef.current) {
+          const video = videoRef.current;
+          video.srcObject = stream;
+          video.setAttribute('playsinline', 'true');
+          
+          await new Promise<void>((resolve) => {
+            if (video.readyState >= 1) return resolve();
+            video.onloadedmetadata = () => resolve();
           });
 
-          if (code && code.data) {
-            const rawData = code.data.trim();
+          await video.play().catch((playErr) => {
+            console.warn('Video playback warning:', playErr);
+          });
+
+          if (isMounted) {
+            setIsCameraActive(true);
+            setIsCameraLoading(false);
+            animationFrameId = requestAnimationFrame(scanLoop);
+          }
+        }
+      } catch (err: any) {
+        if (!isMounted) return;
+        setIsCameraActive(false);
+        setIsCameraLoading(false);
+
+        const isDeviceNotFound = 
+          err?.name === 'NotFoundError' || 
+          err?.name === 'DevicesNotFoundError' ||
+          (typeof err?.message === 'string' && (
+            err.message.toLowerCase().includes('requested device not found') || 
+            err.message.toLowerCase().includes('device not found') ||
+            err.message.toLowerCase().includes('could not start video source')
+          ));
+
+        const isPermissionDenied = 
+          err?.name === 'NotAllowedError' || 
+          err?.name === 'PermissionDeniedError';
+
+        const isNotReadable = 
+          err?.name === 'NotReadableError' || 
+          err?.name === 'TrackStartError';
+
+        if (isDeviceNotFound) {
+          console.warn('Camera device not found:', err?.message || err?.name);
+          setCameraError('Không tìm thấy thiết bị Camera trên máy tính/thiết bị này (chưa cắm webcam). Bạn hãy bấm vào nút "Tải Ảnh QR" hoặc "Nhập Mã Học Sinh" ở dưới để tiếp tục.');
+        } else if (isPermissionDenied) {
+          console.warn('Camera permission denied by user or browser policy:', err?.message || err?.name);
+          setCameraError('Quyền truy cập Camera bị từ chối. Vui lòng cho phép quyền Camera trên thanh địa chỉ của trình duyệt, hoặc chuyển sang chế độ Tải ảnh QR / Nhập mã.');
+        } else if (isNotReadable) {
+          console.warn('Camera in use or not readable:', err?.message || err?.name);
+          setCameraError('Camera đang được một ứng dụng khác sử dụng hoặc bị khóa. Vui lòng tắt ứng dụng đó rồi bấm "Thử Lại Camera".');
+        } else {
+          console.warn('Camera initialization warning:', err?.message || err);
+          setCameraError(err?.message || 'Không thể mở Camera. Vui lòng thử lại hoặc dùng chế độ Tải ảnh / Nhập mã.');
+        }
+      }
+    }
+
+    async function scanLoop() {
+      if (!isMounted) return;
+
+      const video = videoRef.current;
+      if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        try {
+          let detectedCode: string | null = null;
+
+          // 1. First attempt: Native BarcodeDetector (high speed & hardware accelerated)
+          if (barcodeDetector) {
+            try {
+              const barcodes = await barcodeDetector.detect(video);
+              if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                detectedCode = barcodes[0].rawValue;
+              }
+            } catch {
+              // BarcodeDetector failed, fallback to jsQR
+            }
+          }
+
+          // 2. Second attempt: jsQR via Canvas
+          if (!detectedCode && canvasRef.current) {
+            const canvas = canvasRef.current;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (ctx) {
+              // Scale down frame to max 640 for rapid jsQR analysis
+              const maxDim = Math.max(video.videoWidth, video.videoHeight);
+              const scale = maxDim > 640 ? 640 / maxDim : 1;
+              const w = Math.floor(video.videoWidth * scale);
+              const h = Math.floor(video.videoHeight * scale);
+
+              canvas.width = w;
+              canvas.height = h;
+              ctx.drawImage(video, 0, 0, w, h);
+
+              const imgData = ctx.getImageData(0, 0, w, h);
+              const qr = jsQR(imgData.data, imgData.width, imgData.height, {
+                inversionAttempts: 'attemptBoth'
+              });
+
+              if (qr && qr.data) {
+                detectedCode = qr.data;
+              }
+            }
+          }
+
+          // Trigger detection with debouncing (Fast 1-step attendance)
+          if (detectedCode) {
+            const rawData = detectedCode.trim();
             const now = Date.now();
-            
-            // Prevent duplicate triggers for same code within 3 seconds
-            if (rawData !== lastDetectedId || now - lastDetectedTime > 3000) {
+            // Fast scan: If different card, 600ms cooldown; if same card, 2500ms debounce
+            const isSameCard = rawData === lastDetectedId;
+            const cooldown = isSameCard ? 2500 : 600;
+            if (now - lastDetectedTime > cooldown) {
               lastDetectedId = rawData;
               lastDetectedTime = now;
               handleStudentDetected(rawData);
             }
           }
+        } catch (e) {
+          console.warn('Scan frame processing warning:', e);
         }
       }
-      animationFrameId = requestAnimationFrame(scanLoop);
+
+      if (isMounted) {
+        animationFrameId = requestAnimationFrame(scanLoop);
+      }
     }
 
     startCamera();
@@ -353,7 +692,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         currentStream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [activeMode, selectedCameraId, handleStudentDetected]);
+  }, [activeMode, selectedCameraId, cameraRestartCount, handleStudentDetected]);
 
   // Handle QR Scan from uploaded image file
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -363,30 +702,58 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) return;
+      img.onload = async () => {
+        let detected = false;
 
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx.drawImage(img, 0, 0);
+        // Try BarcodeDetector first on Image
+        if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+          try {
+            const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+            const barcodes = await detector.detect(img);
+            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+              handleStudentDetected(barcodes[0].rawValue);
+              detected = true;
+            }
+          } catch {
+            // fallback
+          }
+        }
 
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'attemptBoth',
-        });
+        if (!detected) {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (!ctx) return;
 
-        if (code && code.data) {
-          handleStudentDetected(code.data);
-        } else {
-          alert('Không nhận diện được mã QR trong bức ảnh này. Vui lòng chụp ảnh rõ nét, vuông góc với mã QR hoặc nhập mã học sinh bằng tay.');
+          // Scale image down if larger than 1200px to avoid memory exhaustion
+          const maxDim = Math.max(img.width, img.height);
+          const scale = maxDim > 1200 ? 1200 / maxDim : 1;
+          canvas.width = Math.floor(img.width * scale);
+          canvas.height = Math.floor(img.height * scale);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth',
+          });
+
+          if (code && code.data) {
+            handleStudentDetected(code.data);
+          } else {
+            playBeep('error');
+            setScanNotification({
+              title: 'Không Nhận Diện Được Mã QR',
+              message: 'Vui lòng chọn ảnh chụp rõ nét, vuông góc với mã QR hoặc có độ tương phản cao.',
+              type: 'error'
+            });
+            setTimeout(() => {
+              setScanNotification(prev => (prev?.type === 'error' ? null : prev));
+            }, 3500);
+          }
         }
       };
       img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
-    // Reset file input value
     e.target.value = '';
   };
 
@@ -414,17 +781,32 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                 <h2 className="text-sm font-bold text-white uppercase tracking-wider">
                   Quét Mã QR & Tính Giờ Điểm Danh Tự Động
                 </h2>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-bold flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 border border-emerald-400/40 text-[10px] font-black flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-emerald-400 fill-emerald-400" />
+                  Điểm Danh Tức Thì (1 Bước - Không Cần Bấm Thêm)
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 text-[10px] font-bold flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   Chuẩn hóa theo giờ thực tế
                 </span>
+                {assignedClassName && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[10px] font-bold flex items-center gap-1">
+                    <Lock className="w-3 h-3" />
+                    Chỉ điểm danh: {assignedClassName}
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-300">
                 Tự động nhận diện Đúng Giờ (Loại A) hoặc Đi Trễ (Loại B, -0.1đ) theo giờ Thánh Lễ & Giáo Lý
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-md transition-colors cursor-pointer">
+          <button 
+            id="close-qr-scanner-btn"
+            onClick={onClose} 
+            className="text-slate-400 hover:text-white p-1 rounded-md transition-colors cursor-pointer"
+            title="Đóng cửa sổ quét QR"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -433,6 +815,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         <div className="flex border-b border-slate-200 bg-slate-100 px-4 pt-2 gap-2 text-xs overflow-x-auto">
           <button
             type="button"
+            id="qr-mode-camera-btn"
             onClick={() => setActiveMode('camera')}
             className={`px-3.5 py-2 font-bold rounded-t-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeMode === 'camera'
@@ -446,6 +829,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
           <button
             type="button"
+            id="qr-mode-upload-btn"
             onClick={() => setActiveMode('upload')}
             className={`px-3.5 py-2 font-bold rounded-t-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeMode === 'upload'
@@ -459,6 +843,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
           <button
             type="button"
+            id="qr-mode-manual-btn"
             onClick={() => setActiveMode('manual')}
             className={`px-3.5 py-2 font-bold rounded-t-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeMode === 'manual'
@@ -493,8 +878,8 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                 onChange={(e) => setSessionType(e.target.value as 'Chúa Nhật' | 'Thứ 5')}
                 className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 font-medium text-xs focus:ring-1 focus:ring-amber-500"
               >
-                <option value="Chúa Nhật">Chúa Nhật (Lễ & Học Giáo Lý)</option>
-                <option value="Thứ 5">Thứ 5 (Lớp Bí Tích 17h30-19h00)</option>
+                <option value="Chúa Nhật">Chúa Nhật (7h30 tập trung • 8h00 Thánh lễ • 9h15 học giáo lý)</option>
+                <option value="Thứ 5">Thứ 5 (2 lớp Bí Tích: 18h00 Học Giáo Lý)</option>
               </select>
             </div>
 
@@ -506,19 +891,15 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                 onChange={(e) => setTimeSlotMode(e.target.value as AttendanceTimeSlot | 'auto')}
                 className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 font-medium text-xs focus:ring-1 focus:ring-amber-500"
               >
-                <option value="auto">⚡ Tự động nhận diện theo giờ</option>
+                <option value="auto">⚡ Tự động nhận diện theo giờ quét</option>
                 {sessionType === 'Chúa Nhật' ? (
                   <>
-                    <option value="tap_trung">Giờ Tập Trung (07:00 - 07:30)</option>
-                    <option value="gio_le">Giờ Thánh Lễ (07:30 - 08:30)</option>
-                    <option value="giao_ly">Giờ Học Giáo Lý (08:45 - 10:15)</option>
+                    <option value="tap_trung">1. Giờ Tập Trung (Mốc 07:30)</option>
+                    <option value="gio_le">2. Giờ Thánh Lễ (Mốc 08:00)</option>
+                    <option value="giao_ly">3. Giờ Học Giáo Lý (Mốc 09:15)</option>
                   </>
                 ) : (
-                  <>
-                    <option value="tap_trung">Tập Trung & Kinh Nguyện (17:15 - 17:30)</option>
-                    <option value="gio_le">Giờ Lễ Thứ 5 (17:30 - 18:15)</option>
-                    <option value="giao_ly">Học Bí Tích (17:30 - 19:00)</option>
-                  </>
+                  <option value="giao_ly">Học Giáo Lý Thứ 5 (Mốc 18:00 - mốc duy nhất)</option>
                 )}
               </select>
             </div>
@@ -557,18 +938,39 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           </div>
 
           {/* Time Evaluation Live Status Banner */}
-          <div className="bg-white rounded-lg p-2 border border-slate-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+          <div className="bg-white rounded-lg p-2.5 border border-slate-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
                 <Timer className="w-3.5 h-3.5 text-blue-600" />
-                Khung giờ đang áp dụng:
+                Khung giờ:
               </span>
               <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-900 font-bold text-xs">
                 {currentEvaluation.slotLabel}
               </span>
-              <span className="text-slate-500 text-xs">
-                (Mốc chuẩn đúng giờ: <strong>{currentEvaluation.targetTime}</strong>)
+              <span className="text-slate-600 text-xs">
+                (Mốc đúng giờ: <strong className="font-mono">{currentEvaluation.targetTime}</strong>
+                {effectiveScheduleInfo.isCustom && (
+                  <span className="ml-1 text-amber-900 font-bold bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded text-[10px]">
+                    ⚡ {effectiveScheduleInfo.customSchedule?.title || 'Ngoại thường'}
+                  </span>
+                )}
+                )
               </span>
+
+              <button
+                type="button"
+                id="qr-change-schedule-btn"
+                onClick={() => setIsScheduleModalOpen(true)}
+                className={`ml-1 px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1 border transition-all ${
+                  effectiveScheduleInfo.isCustom
+                    ? 'bg-amber-500 text-slate-950 border-amber-600 hover:bg-amber-400 font-bold shadow-2xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                }`}
+                title="Thay đổi mốc giờ đúng giờ / đi muộn của ngày hôm nay (ngoại thường)"
+              >
+                <Clock className="w-3 h-3 text-current" />
+                <span>{effectiveScheduleInfo.isCustom ? 'Sửa Giờ Ngoại Thường' : '⚙ Thay Đổi Giờ Ngày Này'}</span>
+              </button>
             </div>
 
             <div className="flex items-center gap-2">
@@ -587,82 +989,187 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           {/* Main Left Area: Camera, File Upload, or Manual ID */}
           <div className="lg:col-span-7 flex flex-col">
             {activeMode === 'camera' && (
-              <div className="flex flex-col items-center justify-center bg-slate-950 rounded-xl p-4 text-white relative min-h-[320px]">
-                {/* Camera device selection bar if multiple devices */}
-                {availableCameras.length > 1 && (
-                  <div className="w-full mb-3 flex items-center justify-between text-xs bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800">
-                    <span className="text-slate-300 flex items-center gap-1 text-[11px]">
-                      <SwitchCamera className="w-3.5 h-3.5 text-amber-400" />
-                      Thiết bị camera:
-                    </span>
-                    <select
-                      value={selectedCameraId}
-                      onChange={(e) => setSelectedCameraId(e.target.value)}
-                      className="bg-slate-800 text-white border border-slate-700 rounded px-2 py-1 text-xs"
+              <div className="flex flex-col items-center justify-center bg-slate-950 rounded-xl p-4 text-white relative min-h-[340px]">
+                {/* Camera device selection bar */}
+                <div className="w-full mb-3 flex items-center justify-between text-xs bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800 flex-wrap gap-2">
+                  <span className="text-slate-300 flex items-center gap-1 text-[11px]">
+                    <SwitchCamera className="w-3.5 h-3.5 text-amber-400" />
+                    Thiết bị camera:
+                  </span>
+                  
+                  <div className="flex items-center gap-2">
+                    {availableCameras.length > 0 ? (
+                      <select
+                        value={selectedCameraId}
+                        onChange={(e) => setSelectedCameraId(e.target.value)}
+                        className="bg-slate-800 text-white border border-slate-700 rounded px-2 py-1 text-xs max-w-[200px] truncate"
+                      >
+                        {availableCameras.map((cam, idx) => (
+                          <option key={cam.deviceId || idx} value={cam.deviceId}>
+                            {cam.label || `Camera ${idx + 1}`}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-slate-400 text-[11px]">Đang dò camera...</span>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setCameraRestartCount(c => c + 1)}
+                      className="p-1 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors"
+                      title="Khởi động lại camera"
                     >
-                      {availableCameras.map((cam, idx) => (
-                        <option key={cam.deviceId || idx} value={cam.deviceId}>
-                          {cam.label || `Camera ${idx + 1}`}
-                        </option>
-                      ))}
-                    </select>
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                )}
+                </div>
 
-                {isCameraActive ? (
-                  <div className="relative w-full aspect-4/3 max-w-md rounded-lg overflow-hidden border-2 border-amber-400 bg-black">
-                    <video ref={videoRef} className="w-full h-full object-cover" playsInline autoPlay muted />
-                    <canvas ref={canvasRef} className="hidden" />
-                    
-                    {/* Aiming square with scanning laser line */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-52 h-52 border-2 border-amber-400/80 rounded-xl relative overflow-hidden">
-                        {/* 4 Corner brackets */}
-                        <div className="absolute top-0 left-0 w-5 h-5 border-t-4 border-l-4 border-amber-400"></div>
-                        <div className="absolute top-0 right-0 w-5 h-5 border-t-4 border-r-4 border-amber-400"></div>
-                        <div className="absolute bottom-0 left-0 w-5 h-5 border-b-4 border-l-4 border-amber-400"></div>
-                        <div className="absolute bottom-0 right-0 w-5 h-5 border-b-4 border-r-4 border-amber-400"></div>
+                {/* Video Viewport - ALWAYS IN DOM so videoRef is ready */}
+                <div className={`relative w-full aspect-4/3 max-w-md rounded-xl overflow-hidden border-2 transition-all bg-black flex items-center justify-center ${
+                  flashSuccess ? 'border-emerald-400 ring-4 ring-emerald-400/50 scale-[1.01]' : 'border-amber-400/80 shadow-lg'
+                }`}>
+                  <video 
+                    ref={videoRef} 
+                    className="w-full h-full object-cover" 
+                    playsInline 
+                    autoPlay 
+                    muted 
+                  />
+                  <canvas ref={canvasRef} className="hidden" />
 
-                        {/* Animated Laser Scanning Line */}
-                        <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_8px_#f59e0b] animate-bounce" style={{ animationDuration: '2s' }}></div>
+                  {/* Real-time Instant Attendance Success Overlay on Camera */}
+                  {lastScannedResult && flashSuccess && (
+                    <div className="absolute inset-x-3 top-3 z-30 pointer-events-none animate-in fade-in zoom-in-95 duration-200">
+                      <div className={`p-3.5 rounded-2xl shadow-2xl border-2 flex items-center gap-3 backdrop-blur-md ${
+                        lastScannedResult.status === 'A'
+                          ? 'bg-emerald-700/95 border-emerald-300 text-white shadow-emerald-950/60'
+                          : 'bg-amber-600/95 border-amber-300 text-white shadow-amber-950/60'
+                      }`}>
+                        <div className="w-12 h-12 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center shrink-0">
+                          <CheckCheck className="w-7 h-7 text-white animate-pulse" />
+                        </div>
+                        <div className="min-w-0 flex-1 text-left">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/25">
+                              ✓ ĐÃ ĐIỂM DANH XONG
+                            </span>
+                            <span className="text-[11px] font-mono opacity-90">
+                              {lastScannedResult.scanTime}
+                            </span>
+                          </div>
+                          <div className="text-base font-black truncate leading-tight mt-0.5">
+                            {lastScannedResult.student.holyName} {lastScannedResult.student.fullName}
+                          </div>
+                          <div className="text-xs opacity-95 flex items-center gap-2 mt-0.5 font-medium flex-wrap">
+                            <span className="font-mono bg-black/25 px-1.5 py-0.5 rounded text-[11px] font-bold">{lastScannedResult.student.id}</span>
+                            <span>•</span>
+                            <span>{classes.find(c => c.id === lastScannedResult.student.classId)?.name || lastScannedResult.student.classId}</span>
+                            <span>•</span>
+                            <span className="font-bold underline underline-offset-2">
+                              {lastScannedResult.status === 'A' ? 'Loại A (Đúng giờ)' : 'Loại B (Trễ -0.1đ)'}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
+                  )}
 
-                    <div className="absolute bottom-2 inset-x-0 text-center text-xs bg-slate-900/80 py-1 text-amber-300">
-                      Đang hướng camera vào mã QR • {effectiveScanTime}
+                  {/* Non-blocking Notification Toast on Camera */}
+                  {scanNotification && (
+                    <div className="absolute inset-x-3 top-3 z-30 pointer-events-none animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className={`p-3 rounded-xl shadow-2xl border-2 flex items-center gap-3 backdrop-blur-md ${
+                        scanNotification.type === 'error'
+                          ? 'bg-rose-700/95 border-rose-300 text-white shadow-rose-950/60'
+                          : 'bg-amber-600/95 border-amber-300 text-white shadow-amber-950/60'
+                      }`}>
+                        <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+                          <AlertTriangle className="w-6 h-6 text-white" />
+                        </div>
+                        <div className="min-w-0 flex-1 text-left text-xs">
+                          <div className="font-black uppercase tracking-wider">{scanNotification.title}</div>
+                          <div className="opacity-95 leading-snug mt-0.5">{scanNotification.message}</div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="text-center p-6 space-y-3">
-                    <AlertCircle className="w-10 h-10 text-amber-400 mx-auto" />
-                    <p className="text-xs text-slate-300 max-w-xs">{cameraError || 'Đang kết nối camera...'}</p>
-                    <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setActiveMode('upload')}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Tải Lên Ảnh QR Thay Thế</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveMode('manual')}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Keyboard className="w-3.5 h-3.5" />
-                        <span>Nhập Mã Học Sinh</span>
-                      </button>
+                  )}
+
+                  {/* Scanning Overlay Grid & Target Box */}
+                  {isCameraActive && !cameraError && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className={`w-52 h-52 rounded-2xl relative transition-all ${
+                        flashSuccess ? 'border-4 border-emerald-400 bg-emerald-500/20' : 'border-2 border-amber-400/90'
+                      }`}>
+                        {/* 4 Corner brackets */}
+                        <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-amber-400 rounded-tl-lg"></div>
+                        <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-amber-400 rounded-tr-lg"></div>
+                        <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-amber-400 rounded-bl-lg"></div>
+                        <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-amber-400 rounded-br-lg"></div>
+
+                        {/* Animated Laser Scanning Line */}
+                        <div 
+                          className="w-full h-0.5 bg-gradient-to-r from-transparent via-amber-300 to-transparent shadow-[0_0_12px_#f59e0b] animate-bounce" 
+                          style={{ animationDuration: '2s' }}
+                        ></div>
+                      </div>
+
+                      <div className="absolute bottom-2 inset-x-3 text-center text-[11px] bg-slate-900/90 py-1.5 px-3 rounded-full text-emerald-300 font-semibold border border-emerald-500/40 shadow-lg flex items-center justify-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400 shrink-0" />
+                        <span className="truncate">1 Bước duy nhất: Quét mã là hoàn tất, không cần bấm thêm</span>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+
+                  {/* Loading State Overlay */}
+                  {isCameraLoading && !cameraError && (
+                    <div className="absolute inset-0 bg-slate-950/80 flex flex-col items-center justify-center p-4 text-center space-y-2 z-10">
+                      <RefreshCw className="w-8 h-8 text-amber-400 animate-spin" />
+                      <p className="text-xs text-slate-300 font-medium">Đang kết nối camera thiết bị...</p>
+                    </div>
+                  )}
+
+                  {/* Camera Error Overlay */}
+                  {cameraError && (
+                    <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center space-y-3 z-20">
+                      <AlertCircle className="w-10 h-10 text-rose-400 mx-auto" />
+                      <p className="text-xs text-rose-200 max-w-sm leading-relaxed">{cameraError}</p>
+                      
+                      <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setCameraRestartCount(c => c + 1)}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Thử Lại Camera</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveMode('upload')}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Tải Ảnh QR</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveMode('manual')}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Keyboard className="w-3.5 h-3.5" />
+                          <span>Nhập Mã Học Sinh</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Quick keyboard search inside camera mode */}
                 <div className="w-full mt-3 pt-3 border-t border-slate-800">
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
-                      placeholder="Hoặc gõ nhanh mã thẻ (vd: DBS-KT-001)..."
+                      placeholder="Hoặc gõ nhanh mã thẻ (vd: DBS-KT-001, DBS-SC-004, 001)..."
                       value={manualIdInput}
                       onChange={(e) => setManualIdInput(e.target.value)}
                       onKeyDown={(e) => {
@@ -686,7 +1193,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                           setManualIdInput('');
                         }
                       }}
-                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0"
                     >
                       Điểm Danh
                     </button>
@@ -697,7 +1204,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
             {activeMode === 'upload' && (
               /* Mode 2: Upload Image of QR */
-              <div className="bg-slate-50 border-2 border-dashed border-emerald-300 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-4 min-h-[320px]">
+              <div className="bg-slate-50 border-2 border-dashed border-emerald-300 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-4 min-h-[340px]">
                 <div className="w-14 h-14 rounded-2xl bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-700">
                   <Upload className="w-7 h-7" />
                 </div>
@@ -735,7 +1242,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
             {activeMode === 'manual' && (
               /* Mode 3: Manual Search & Entry */
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col space-y-3 min-h-[320px]">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col space-y-3 min-h-[340px]">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                     <Keyboard className="w-4 h-4 text-blue-600" />
@@ -758,7 +1265,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
-                      placeholder="Nhập mã học sinh (vd: DBS-KT-001, 001, DBS-SC-004)..."
+                      placeholder="Nhập mã học sinh (vd: DBS-KT-001, DBS-SC-004, 001)..."
                       value={manualIdInput}
                       onChange={(e) => setManualIdInput(e.target.value)}
                       className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-600 font-mono"
@@ -778,7 +1285,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                   <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                     Gợi ý học sinh khớp mã:
                   </div>
-                  {students
+                  {accessibleStudents
                     .filter(s => {
                       const q = manualIdInput.trim().toLowerCase();
                       if (!q) return true;
@@ -829,15 +1336,15 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             <div className="mt-3 p-2.5 bg-slate-100 rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-slate-600 font-semibold">
                 <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                <span>Thử nghiệm nhanh không cần thẻ:</span>
+                <span>Thử nghiệm nhanh không cần thẻ ({assignedClassName || 'Toàn xứ'}):</span>
               </div>
-              <div className="flex items-center gap-1">
-                {students.slice(0, 3).map(st => (
+              <div className="flex items-center gap-1 flex-wrap">
+                {accessibleStudents.slice(0, 4).map(st => (
                   <button
                     key={st.id}
                     type="button"
                     onClick={() => handleStudentDetected(st.id)}
-                    className="px-2 py-1 bg-white hover:bg-amber-50 border border-slate-300 hover:border-amber-400 text-slate-700 hover:text-amber-900 rounded text-[11px] font-medium transition-colors cursor-pointer truncate max-w-[120px]"
+                    className="px-2 py-1 bg-white hover:bg-amber-50 border border-slate-300 hover:border-amber-400 text-slate-700 hover:text-amber-900 rounded text-[11px] font-medium transition-colors cursor-pointer truncate max-w-[130px]"
                     title={`Thử điểm danh cho ${st.holyName} ${st.fullName}`}
                   >
                     {st.fullName.split(' ').pop()} ({st.id.split('-').pop()})
@@ -851,7 +1358,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           <div className="lg:col-span-5 flex flex-col space-y-3">
             {/* Last Scanned Banner */}
             {lastScannedResult ? (
-              <div className={`border rounded-xl p-3.5 shadow-xs animate-in fade-in ${
+              <div className={`border rounded-xl p-3.5 shadow-xs animate-in fade-in zoom-in-95 duration-200 ${
                 lastScannedResult.status === 'A' ? 'bg-emerald-50 border-emerald-300 text-emerald-950' : 'bg-amber-50 border-amber-300 text-amber-950'
               }`}>
                 <div className="flex items-center justify-between mb-1">
@@ -952,6 +1459,21 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           </button>
         </div>
       </div>
+
+      {isScheduleModalOpen && (
+        <CustomScheduleModal
+          initialDate={sessionDate}
+          initialSessionType={sessionType}
+          customSchedules={internalCustomSchedules}
+          onScheduleUpdated={(updated) => {
+            setInternalCustomSchedules(updated);
+            if (onScheduleUpdated) {
+              onScheduleUpdated(updated);
+            }
+          }}
+          onClose={() => setIsScheduleModalOpen(false)}
+        />
+      )}
     </div>
   );
 };
