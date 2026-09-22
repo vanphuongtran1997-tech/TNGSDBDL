@@ -8,7 +8,6 @@ import {
   MapPin, 
   Phone, 
   ShieldCheck, 
-  Sparkles, 
   ArrowRight,
   Clock,
   BookOpen,
@@ -117,7 +116,7 @@ export const PublicStudentLookupModal: React.FC<PublicStudentLookupModalProps> =
               Tra Cứu Thông Tin Học Sinh Giáo Lý
             </h2>
             <p className="text-xs text-slate-300">
-              Nhập Mã Học Sinh (vd: <code className="text-amber-300 font-bold">DBS-2026-001</code>) để xem thông tin lớp học và giáo lý viên phụ trách.
+              Nhập Mã Học Sinh hoặc Họ Tên học sinh để xem thông tin lớp học và giáo lý viên phụ trách.
             </p>
           </div>
           <button
@@ -129,8 +128,8 @@ export const PublicStudentLookupModal: React.FC<PublicStudentLookupModalProps> =
           </button>
         </div>
 
-        {/* Search Bar & Quick Tags */}
-        <div className="p-4 sm:p-5 bg-slate-50 border-b border-slate-200 shrink-0 space-y-3">
+        {/* Search Bar */}
+        <div className="p-4 sm:p-5 bg-slate-50 border-b border-slate-200 shrink-0">
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <Search className="w-4 h-4 text-amber-600" />
@@ -139,7 +138,7 @@ export const PublicStudentLookupModal: React.FC<PublicStudentLookupModalProps> =
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Nhập Mã Học Sinh (vd: DBS-2026-001, 001) hoặc Họ Tên..."
+              placeholder="Nhập Mã Học Sinh hoặc Họ Tên..."
               className="w-full pl-10 pr-24 py-3 bg-white border-2 border-slate-300 focus:border-amber-500 rounded-2xl text-xs sm:text-sm font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-all font-mono shadow-xs"
               autoFocus
             />
@@ -157,28 +156,6 @@ export const PublicStudentLookupModal: React.FC<PublicStudentLookupModalProps> =
                 Tìm kiếm
               </span>
             </div>
-          </div>
-
-          {/* Quick Click Sample IDs */}
-          <div className="flex items-center gap-1.5 flex-wrap text-xs text-slate-600">
-            <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-600" />
-              Gợi ý mã mẫu:
-            </span>
-            {['DBS-2026-001', 'DBS-2026-004', 'DBS-2026-010', 'DBS-2026-020', 'DBS-2026-030'].map((sampleId) => (
-              <button
-                key={sampleId}
-                type="button"
-                onClick={() => setSearchTerm(sampleId)}
-                className={`px-2 py-0.5 rounded-lg text-[11px] font-mono font-medium border transition-colors cursor-pointer ${
-                  searchTerm.toUpperCase() === sampleId
-                    ? 'bg-amber-600 text-white border-amber-600'
-                    : 'bg-white text-slate-700 border-slate-300 hover:border-amber-400 hover:bg-amber-50'
-                }`}
-              >
-                {sampleId}
-              </button>
-            ))}
           </div>
         </div>
 
