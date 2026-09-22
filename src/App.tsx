@@ -179,6 +179,10 @@ export default function App() {
   };
 
   const handleOpenSwitchAccount = (targetUser?: UserAccount) => {
+    if (currentUser.role !== 'admin') {
+      alert('Chức năng chuyển đổi nhanh tài khoản chỉ dành cho Quản trị viên (Admin). Vui lòng đăng xuất để đăng nhập tài khoản khác.');
+      return;
+    }
     setSwitchTargetUser(targetUser || null);
     setIsSwitchAccountModalOpen(true);
   };
@@ -357,12 +361,12 @@ export default function App() {
         const updated = { ...grade };
         if (grade.semester === 1) {
           if (options.clearMidtermHK1) updated.midTermScore = null;
-          if (options.clearFinalHK1) updated.finalScore = null;
+          if (options.clearFinalHK1) updated.finalExamScore = null;
         }
         if (grade.semester === 2) {
           if (options.clearMidtermHK2) {
             updated.midTermScore = null;
-            updated.finalScore = null;
+            updated.finalExamScore = null;
           }
         }
         if (options.clearRetestScores) {
@@ -1136,7 +1140,11 @@ export default function App() {
             setCardModalStudentIds([st.id]);
             setIsCardModalOpen(true);
           }}
-          onQuickMarkAttendance={handleUpdateAttendance}
+          onQuickMarkAttendance={(studentId, status, date, sessionType) => {
+            const month = new Date(date).getMonth() + 1;
+            const semester: 1 | 2 = (month >= 9 || month <= 1) ? 1 : 2;
+            handleUpdateAttendance(studentId, status, date, sessionType, semester);
+          }}
         />
       )}
 
@@ -1173,7 +1181,8 @@ export default function App() {
         <ParishInfoEditModal
           isOpen={isParishInfoEditOpen}
           parishInfo={parishInfo}
-          onSave={handleSaveParishInfo}
+          currentUser={currentUser}
+          onSaveParishInfo={handleSaveParishInfo}
           onClose={() => setIsParishInfoEditOpen(false)}
         />
       )}
@@ -1192,11 +1201,11 @@ export default function App() {
       <footer className="bg-slate-900 text-slate-400 text-xs py-4 px-4 border-t border-slate-800 mt-8 print:hidden">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
           <div>
-            <p className="text-white font-medium">{parishInfo.catechistDepartmentName} {parishInfo.parishName}</p>
+            <p className="text-white font-medium">Ban Giáo Lý {parishInfo.parishName}</p>
             <p className="text-[11px] text-slate-400">Niên khóa {parishInfo.academicYear} • {parishInfo.motto}</p>
           </div>
           <div className="text-[11px] text-slate-500">
-            {parishInfo.phone} • {parishInfo.email} • {parishInfo.address}
+            {parishInfo.hotline || parishInfo.mobileZalo} • {parishInfo.email} • {parishInfo.address}
           </div>
         </div>
       </footer>

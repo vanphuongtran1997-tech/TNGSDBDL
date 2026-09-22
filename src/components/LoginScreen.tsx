@@ -75,11 +75,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [isAcademicYearOpen, setIsAcademicYearOpen] = useState(false);
   const [isOfficeContactOpen, setIsOfficeContactOpen] = useState(false);
 
-  // Suggestions strictly restricted to Administrator (admin) and Pastor (pastor) accounts only
-  const adminAndPastorUsers = useMemo(() => {
-    return allUsers.filter(u => (u.role === 'admin' || u.role === 'pastor') && u.status === 'active');
-  }, [allUsers]);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -200,7 +195,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       // Successful login -> Reset failed attempts
       resetFailedLoginAttempts();
-      setRateLimit({ isLocked: false, remainingSeconds: 0, attempts: 0 });
+      setRateLimit(getRateLimitStatus());
       setIsLoading(false);
       onLogin(user);
     }, 200);
@@ -331,43 +326,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     autoFocus
                   />
                 </div>
-
-                {/* Account suggestions strictly restricted to Admin and Pastor */}
-                {adminAndPastorUsers.length > 0 && (
-                  <div className="mt-2.5 p-2.5 bg-slate-50/90 rounded-xl border border-slate-200 text-xs">
-                    <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Gợi ý tài khoản quản trị & cha sở:</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {adminAndPastorUsers.map((u) => (
-                        <button
-                          key={u.id}
-                          type="button"
-                          onClick={() => {
-                            setUsername(u.username);
-                            setPassword(u.password || 'Tngsdbdl26@');
-                            setErrorMessage(null);
-                          }}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer shadow-2xs ${
-                            u.role === 'pastor'
-                              ? 'bg-amber-50 hover:bg-amber-100/80 text-amber-900 border-amber-300 hover:border-amber-400'
-                              : 'bg-indigo-50 hover:bg-indigo-100/80 text-indigo-950 border-indigo-200 hover:border-indigo-300'
-                          }`}
-                          title={`Chọn nhanh tài khoản ${u.name}`}
-                        >
-                          <span>{u.role === 'pastor' ? '✝️ Cha Sở' : '🛡️ Quản trị'}</span>
-                          <span className="font-mono text-slate-600 text-[10px]">@{u.username}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-1.5 italic">
-                      * Các chức vụ khác (Giáo lý viên, Dự trưởng, Phụ huynh...) vui lòng tự nhập tài khoản và mật khẩu được cấp.
-                    </p>
-                  </div>
-                )}
               </div>
 
               {/* Password Input */}

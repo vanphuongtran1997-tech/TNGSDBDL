@@ -651,8 +651,8 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
                   const perm = checkAttendanceEditPermission(d, userRole);
                   const customSched = customSchedules?.[d];
                   const displayedTargetTime = activeSessionType === 'Chúa Nhật'
-                    ? (customSched?.configs.tap_trung.targetTime || '07:30')
-                    : (customSched?.configs.giao_ly.targetTime || '18:00');
+                    ? (customSched?.targetTimes?.tap_trung || '07:30')
+                    : (customSched?.targetTimes?.giao_ly || '18:00');
                   return (
                     <th
                       key={d}

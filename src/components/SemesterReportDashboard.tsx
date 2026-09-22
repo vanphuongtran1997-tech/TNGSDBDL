@@ -523,7 +523,7 @@ export const SemesterReportDashboard: React.FC<SemesterReportDashboardProps> = (
                     <td className="py-2.5 px-3 font-bold text-slate-900">
                       {cls.name} {cls.isSacramentClass ? '★' : ''}
                     </td>
-                    <td className="py-2.5 px-3 text-slate-600">{cls.gradeLevel}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{cls.level}</td>
                     <td className="py-2.5 px-3 text-center font-mono font-bold">{clsTotal}</td>
                     <td className="py-2.5 px-3 text-center font-mono font-bold text-amber-900">
                       {clsAvg.toFixed(2)}

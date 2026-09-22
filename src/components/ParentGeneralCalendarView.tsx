@@ -120,7 +120,7 @@ export const ParentGeneralCalendarView: React.FC<ParentGeneralCalendarViewProps>
 
       if (activityTypeFilter !== 'all') {
         if (activityTypeFilter === 'liturgy') {
-          return e.type === 'liturgy' || (e.liturgyRank && e.liturgyRank !== '');
+          return e.type === 'liturgy' || Boolean(e.liturgyRank);
         }
         if (activityTypeFilter === 'teaching') {
           return e.academicStatus === 'Học' || e.type === 'teaching';

@@ -264,7 +264,7 @@ export const ReportBookModal: React.FC<ReportBookModalProps> = ({
                       Được đặc cách lên lớp thẳng (Quyết định của Quý Cha & Ban Quản Trị)
                     </span>
                     <span className="text-[11px] text-purple-800 italic">
-                      Lý do xét duyệt: {specialPromo?.reason} ({specialPromo?.approvedBy} phê chuẩn ngày {specialPromo?.approvedAt})
+                      Lý do xét duyệt: {specialPromo?.reason} ({specialPromo?.approvedBy} phê chuẩn ngày {specialPromo?.decisionDate})
                     </span>
                   </div>
                 </div>

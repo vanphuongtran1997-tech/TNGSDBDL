@@ -161,20 +161,20 @@ export const StudentIdSearchModal: React.FC<StudentIdSearchModalProps> = ({
     const gSem1 = grades.find(g => g.studentId === activeStudent.id && g.semester === 1);
     const gSem2 = grades.find(g => g.studentId === activeStudent.id && g.semester === 2);
 
-    const s1Avg = gSem1 ? calculateSemesterAcademicAverage(gSem1.midtermScore, gSem1.finalScore, gSem1.retestScore) : 0;
-    const s2Avg = gSem2 ? calculateSemesterAcademicAverage(gSem2.midtermScore, gSem2.finalScore, gSem2.retestScore) : 0;
+    const s1Avg = gSem1 ? calculateSemesterAcademicAverage(gSem1.midTermScore, gSem1.finalExamScore, gSem1.retestScore) : 0;
+    const s2Avg = gSem2 ? calculateSemesterAcademicAverage(gSem2.midTermScore, gSem2.finalExamScore, gSem2.retestScore) : 0;
     const yearlyAcademic = calculateYearlyAcademicAverage(s1Avg, s2Avg);
 
     const studentConducts = conducts.filter(c => c.studentId === activeStudent.id);
-    const c1 = studentConducts.find(c => c.semester === 1);
-    const c2 = studentConducts.find(c => c.semester === 2);
-    const condScore1 = c1 ? calculateSemesterConductScore(c1.violations) : 10;
-    const condScore2 = c2 ? calculateSemesterConductScore(c2.violations) : 10;
+    const c1Violations = studentConducts.filter(c => c.semester === 1).map(c => c.violation);
+    const c2Violations = studentConducts.filter(c => c.semester === 2).map(c => c.violation);
+    const condScore1 = calculateSemesterConductScore(c1Violations);
+    const condScore2 = calculateSemesterConductScore(c2Violations);
     const condYearly = Math.round(((condScore1 + condScore2) / 2) * 100) / 100;
 
     const attendYearly = attendanceStats?.yearlyAvg || 10;
     const finalYearlyAvg = calculateYearlyAverageHalf(yearlyAcademic, attendYearly);
-    const totalD = (attendanceStats?.sem1Calc.dCount || 0) + (attendanceStats?.sem2Calc.dCount || 0);
+    const totalD = (attendanceStats?.sem1Calc.counts.D || 0) + (attendanceStats?.sem2Calc.counts.D || 0);
     const evalResult = evaluatePromotionAndRank(
       yearlyAcademic,
       finalYearlyAvg,
@@ -511,15 +511,15 @@ export const StudentIdSearchModal: React.FC<StudentIdSearchModalProps> = ({
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center">
                     <span className="text-[10px] uppercase font-bold text-slate-500 block">Xếp Loại Chung</span>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block mt-1 ${
-                      gradeStats?.evalResult.rank === 'Giỏi' ? 'bg-emerald-100 text-emerald-800' :
-                      gradeStats?.evalResult.rank === 'Khá' ? 'bg-blue-100 text-blue-800' :
-                      gradeStats?.evalResult.rank === 'Trung Bình' ? 'bg-amber-100 text-amber-800' :
+                      gradeStats?.evalResult.academicRank === 'GIỎI' ? 'bg-emerald-100 text-emerald-800' :
+                      gradeStats?.evalResult.academicRank === 'KHÁ' ? 'bg-blue-100 text-blue-800' :
+                      gradeStats?.evalResult.academicRank === 'TRUNG BÌNH' ? 'bg-amber-100 text-amber-800' :
                       'bg-rose-100 text-rose-800'
                     }`}>
-                      {gradeStats?.evalResult.rank || 'Đang cập nhật'}
+                      {gradeStats?.evalResult.academicRank || 'Đang cập nhật'}
                     </span>
                     <span className="text-[10px] text-slate-500 block mt-0.5">
-                      {gradeStats?.evalResult.promotionDecision}
+                      {gradeStats?.evalResult.finalResult}
                     </span>
                   </div>
                 </div>

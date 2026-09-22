@@ -238,20 +238,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </p>
                   </div>
 
-                  {isParent ? (
-                    <div className="p-3 mx-2 my-1.5 bg-amber-50/80 rounded-xl border border-amber-200 text-xs space-y-1">
-                      <div className="font-bold text-amber-900 flex items-center gap-1.5">
-                        <ShieldCheck className="w-3.5 h-3.5 text-amber-700" />
-                        <span>Chế Độ Phụ Huynh Bảo Mật</span>
-                      </div>
-                      <p className="text-[11px] text-amber-800 leading-relaxed">
-                        Tài khoản chỉ xem thông tin học tập của con em mình và niên lịch sinh hoạt chung của Giáo Sở Don Bosco.
-                      </p>
-                    </div>
-                  ) : (
+                  {currentUser.role === 'admin' ? (
                     <>
                       <div className="px-3.5 py-1 text-[11px] text-slate-500 font-semibold flex items-center justify-between">
-                        <span>Chuyển Sang Quản Trị / Cha Sở:</span>
+                        <span>Chuyển Đổi Tài Khoản (Quản Trị):</span>
                         <span className="text-[10px] text-amber-600 font-normal flex items-center gap-1">
                           <Lock className="w-3 h-3" /> Yêu cầu mật khẩu
                         </span>
@@ -259,7 +249,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                       <div className="max-h-48 overflow-y-auto pr-1">
                         {allUsers
-                          .filter((u) => u.id !== currentUser.id && (u.role === 'admin' || u.role === 'pastor'))
+                          .filter((u) => u.id !== currentUser.id && u.status === 'active')
                           .map((user) => (
                             <button
                               key={user.id}
@@ -286,13 +276,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                               <Lock className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 shrink-0" />
                             </button>
                           ))}
-                        {allUsers.filter((u) => u.id !== currentUser.id && (u.role === 'admin' || u.role === 'pastor')).length === 0 && (
+                        {allUsers.filter((u) => u.id !== currentUser.id && u.status === 'active').length === 0 && (
                           <div className="px-3.5 py-2 text-[11px] text-slate-400 italic">
-                            Không có tài khoản Quản trị viên hoặc Cha Quản sở khác.
+                            Không có tài khoản người dùng khác trong hệ thống.
                           </div>
                         )}
                       </div>
                     </>
+                  ) : (
+                    <div className="p-3 mx-2 my-1.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
+                      <div className="font-semibold text-slate-700 flex items-center gap-1.5 text-[11px]">
+                        <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Bảo Mật Tài Khoản</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        Tính năng chuyển đổi nhanh chỉ dành cho Quản trị viên. Để đổi tài khoản, vui lòng đăng xuất và đăng nhập lại.
+                      </p>
+                    </div>
                   )}
 
                   <div className="mt-2 pt-2 border-t border-slate-100 px-3 space-y-1">
