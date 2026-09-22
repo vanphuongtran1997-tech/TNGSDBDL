@@ -203,8 +203,8 @@ export function getUserAuthorizedClasses(user: UserAccount, classes: ClassRoom[]
     const taught = classes.filter(c => c.headTeacherId === user.id || c.assistantTeacherIds?.includes(user.id));
     if (taught.length > 0) return taught;
 
-    // Fallback if none assigned
-    return classes.length > 0 ? [classes[0]] : [];
+    // Security: Do NOT default to any class if not assigned to maintain least privilege
+    return [];
   }
   return [];
 }
@@ -213,7 +213,7 @@ export function getUserAuthorizedClasses(user: UserAccount, classes: ClassRoom[]
  * Returns the list of students a user is authorized to access.
  * - Parish-wide roles: all students.
  * - Catechists & Trainees: only students in their assigned class(es).
- * - Parents: only their own children (matched by parent phone or name).
+ * - Parents: only their own children (matched by student ID, parent phone or name).
  */
 export function getUserAuthorizedStudents(user: UserAccount, students: Student[], classes: ClassRoom[]): Student[] {
   if (hasParishWideAccess(user.role)) {
@@ -225,6 +225,12 @@ export function getUserAuthorizedStudents(user: UserAccount, students: Student[]
     return students.filter(s => authorizedClassIds.includes(s.classId));
   }
   if (user.role === 'parent') {
+    // 1. First priority match: direct studentId link on parent account
+    if (user.studentId) {
+      const byStudentId = students.filter(s => s.id.toLowerCase() === user.studentId?.toLowerCase());
+      if (byStudentId.length > 0) return byStudentId;
+    }
+
     const phone = user.phone?.replace(/[\s.-]/g, '') || '';
     const name = user.name?.toLowerCase() || '';
     return students.filter(s => {

@@ -251,7 +251,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ) : (
                     <>
                       <div className="px-3.5 py-1 text-[11px] text-slate-500 font-semibold flex items-center justify-between">
-                        <span>Chuyển Tài Khoản Khác:</span>
+                        <span>Chuyển Sang Quản Trị / Cha Sở:</span>
                         <span className="text-[10px] text-amber-600 font-normal flex items-center gap-1">
                           <Lock className="w-3 h-3" /> Yêu cầu mật khẩu
                         </span>
@@ -259,7 +259,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                       <div className="max-h-48 overflow-y-auto pr-1">
                         {allUsers
-                          .filter((u) => u.id !== currentUser.id)
+                          .filter((u) => u.id !== currentUser.id && (u.role === 'admin' || u.role === 'pastor'))
                           .map((user) => (
                             <button
                               key={user.id}
@@ -286,6 +286,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                               <Lock className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 shrink-0" />
                             </button>
                           ))}
+                        {allUsers.filter((u) => u.id !== currentUser.id && (u.role === 'admin' || u.role === 'pastor')).length === 0 && (
+                          <div className="px-3.5 py-2 text-[11px] text-slate-400 italic">
+                            Không có tài khoản Quản trị viên hoặc Cha Quản sở khác.
+                          </div>
+                        )}
                       </div>
                     </>
                   )}

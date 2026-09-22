@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   X, 
   Lock, 
@@ -30,12 +30,21 @@ export const SwitchAccountModal: React.FC<SwitchAccountModalProps> = ({
   onLogoutToLoginScreen,
   onClose,
 }) => {
+  // Only suggest Admin and Pastor accounts for switching
+  const eligibleUsers = useMemo(() => {
+    return allUsers.filter(
+      u => u.id !== currentUser.id && (u.role === 'admin' || u.role === 'pastor')
+    );
+  }, [allUsers, currentUser.id]);
+
   const [selectedUser, setSelectedUser] = useState<UserAccount>(() => {
-    if (initialTargetUser && initialTargetUser.id !== currentUser.id) {
+    if (initialTargetUser && initialTargetUser.id !== currentUser.id && (initialTargetUser.role === 'admin' || initialTargetUser.role === 'pastor')) {
       return initialTargetUser;
     }
-    const other = allUsers.find(u => u.id !== currentUser.id && u.status === 'active');
-    return other || allUsers[0];
+    const adminOrPastor = allUsers.find(
+      u => u.id !== currentUser.id && (u.role === 'admin' || u.role === 'pastor') && u.status === 'active'
+    );
+    return adminOrPastor || initialTargetUser || allUsers[0];
   });
 
   const [password, setPassword] = useState('');
@@ -128,28 +137,32 @@ export const SwitchAccountModal: React.FC<SwitchAccountModalProps> = ({
           {/* Select Target Account */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Chọn Tài Khoản Cần Chuyển Đến:
+              Chọn Tài Khoản Cần Chuyển Đến (Chỉ Quản Trị & Cha Sở):
             </label>
-            <select
-              value={selectedUser.id}
-              onChange={(e) => {
-                const found = allUsers.find(u => u.id === e.target.value);
-                if (found) {
-                  setSelectedUser(found);
-                  setPassword('');
-                  setErrorMessage(null);
-                }
-              }}
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-amber-500 font-medium"
-            >
-              {allUsers
-                .filter(u => u.id !== currentUser.id)
-                .map(u => (
+            {eligibleUsers.length > 0 ? (
+              <select
+                value={selectedUser.id}
+                onChange={(e) => {
+                  const found = eligibleUsers.find(u => u.id === e.target.value);
+                  if (found) {
+                    setSelectedUser(found);
+                    setPassword('');
+                    setErrorMessage(null);
+                  }
+                }}
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-amber-500 font-medium"
+              >
+                {eligibleUsers.map(u => (
                   <option key={u.id} value={u.id}>
-                    {u.name} ({u.username}) • {u.role}
+                    {u.role === 'pastor' ? '✝️ Cha Sở' : '🛡️ Quản Trị'} - {u.name} (@{u.username})
                   </option>
                 ))}
-            </select>
+              </select>
+            ) : (
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 italic">
+                Không có tài khoản Quản trị viên hoặc Cha Quản sở khác để chuyển đổi.
+              </div>
+            )}
           </div>
 
           {/* Target User Card */}
@@ -185,14 +198,9 @@ export const SwitchAccountModal: React.FC<SwitchAccountModalProps> = ({
                 className="text-[10px] text-amber-600 hover:text-amber-800 font-medium cursor-pointer"
                 title="Điền mật khẩu mặc định"
               >
-                {selectedUser.role === 'parent' ? 'Điền Mã Học Sinh' : 'Điền mật khẩu mặc định'}
+                Điền mật khẩu quản trị / cha sở (Tngsdbdl26@)
               </button>
             </div>
-            {selectedUser.role === 'parent' && (
-              <div className="mb-2 text-[11px] text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200">
-                💡 Mật khẩu mặc định của phụ huynh là <strong>Mã Học Sinh</strong> ({selectedUser.studentId || selectedUser.username}).
-              </div>
-            )}
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                 <Lock className="w-4 h-4" />

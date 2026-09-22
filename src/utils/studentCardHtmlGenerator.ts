@@ -1,4 +1,5 @@
 import { Student, ClassRoom } from '../types';
+import { escapeHtml, sanitizeUrl } from './security';
 
 export interface CardPrintOptions {
   mode: 'a4_sheet' | 'cr80_single';
@@ -33,9 +34,22 @@ export function generateCardPrintHtml(
   const cardHtmlList: string[] = [];
 
   for (const st of selectedStudents) {
-    const qrUrl = qrMap[st.id] || '';
-    const className = getClassName(st.classId);
+    const rawQr = qrMap[st.id] || '';
+    const safeQrUrl = sanitizeUrl(rawQr);
+    const rawClass = getClassName(st.classId);
     const dobFormatted = st.dob ? new Date(st.dob).toLocaleDateString('vi-VN') : '---';
+
+    // XSS defense: HTML-escape all user-controlled text strings
+    const safeId = escapeHtml(st.id);
+    const safeFullName = escapeHtml(st.fullName);
+    const safeHolyName = escapeHtml(st.holyName);
+    const safeClassName = escapeHtml(rawClass);
+    const safeDobFormatted = escapeHtml(dobFormatted);
+    const safeSubParish = escapeHtml(st.subParish || 'Don Bosco');
+    const safeParentName = escapeHtml(st.parentName || 'PH');
+    const safeParentPhone = escapeHtml(st.parentPhone || '---');
+    const safeAcademicYear = escapeHtml(academicYear);
+    const safeAvatarUrl = sanitizeUrl(st.avatarUrl);
 
     // FRONT CARD HTML
     const frontCardHtml = `
@@ -50,7 +64,7 @@ export function generateCardPrintHtml(
               <div class="parish-name">GIÁO SỞ DON BOSCO ĐÀ LẠT</div>
               <div class="sub-header">BAN GIÁO LÝ THIẾU NHI</div>
             </div>
-            <div class="academic-year-badge">${academicYear}</div>
+            <div class="academic-year-badge">${safeAcademicYear}</div>
           </div>
           <div class="card-title-bar">
             <span class="card-title">THẺ HỌC SINH GIÁO LÝ</span>
@@ -65,29 +79,29 @@ export function generateCardPrintHtml(
               <!-- Column 1: Photo & ID -->
               <div class="col-photo">
                 <div class="photo-box">
-                  ${st.avatarUrl ? `
-                    <img src="${st.avatarUrl}" alt="${st.fullName}" class="photo-img" />
+                  ${safeAvatarUrl ? `
+                    <img src="${safeAvatarUrl}" alt="${safeFullName}" class="photo-img" />
                   ` : `
                     <div class="photo-placeholder">
-                      <div class="avatar-initial">${st.holyName.charAt(0)}</div>
+                      <div class="avatar-initial">${safeHolyName.charAt(0) || '✝'}</div>
                       <div class="avatar-tag">ẢNH 3x4</div>
                     </div>
                   `}
                 </div>
-                <div class="student-id-tag">${st.id}</div>
+                <div class="student-id-tag">${safeId}</div>
               </div>
 
               <!-- Column 2: Student Details -->
               <div class="col-info">
-                <div class="holy-name">${st.holyName}</div>
-                <div class="full-name">${st.fullName}</div>
+                <div class="holy-name">${safeHolyName}</div>
+                <div class="full-name">${safeFullName}</div>
                 
                 <div class="info-grid">
-                  <div class="info-row"><span class="lbl">Lớp:</span> <strong class="cls-name">${className}</strong></div>
-                  <div class="info-row"><span class="lbl">Sinh:</span> <span>${dobFormatted}</span></div>
-                  <div class="info-row"><span class="lbl">Giáo họ:</span> <span>${st.subParish || 'Don Bosco'}</span></div>
+                  <div class="info-row"><span class="lbl">Lớp:</span> <strong class="cls-name">${safeClassName}</strong></div>
+                  <div class="info-row"><span class="lbl">Sinh:</span> <span>${safeDobFormatted}</span></div>
+                  <div class="info-row"><span class="lbl">Giáo họ:</span> <span>${safeSubParish}</span></div>
                   ${options.showParentPhone ? `
-                    <div class="info-row parent-row"><span class="lbl">PH:</span> <span>${st.parentName || 'PH'} (${st.parentPhone || '---'})</span></div>
+                    <div class="info-row parent-row"><span class="lbl">PH:</span> <span>${safeParentName} (${safeParentPhone})</span></div>
                   ` : ''}
                 </div>
               </div>
@@ -95,7 +109,7 @@ export function generateCardPrintHtml(
               <!-- Column 3: High Contrast QR Code -->
               <div class="col-qr">
                 <div class="qr-container">
-                  ${qrUrl ? `<img src="${qrUrl}" alt="QR ${st.id}" class="qr-image" />` : '<div class="qr-loading">Đang nạp QR...</div>'}
+                  ${safeQrUrl ? `<img src="${safeQrUrl}" alt="QR ${safeId}" class="qr-image" />` : '<div class="qr-loading">Đang nạp QR...</div>'}
                 </div>
                 <div class="qr-caption">QUÉT ĐIỂM DANH</div>
               </div>
@@ -105,20 +119,20 @@ export function generateCardPrintHtml(
             <div class="portrait-layout">
               <div class="portrait-top">
                 <div class="photo-box-portrait">
-                  ${st.avatarUrl ? `
-                    <img src="${st.avatarUrl}" alt="${st.fullName}" class="photo-img" />
+                  ${safeAvatarUrl ? `
+                    <img src="${safeAvatarUrl}" alt="${safeFullName}" class="photo-img" />
                   ` : `
                     <div class="photo-placeholder">
-                      <div class="avatar-initial">${st.holyName.charAt(0)}</div>
+                      <div class="avatar-initial">${safeHolyName.charAt(0) || '✝'}</div>
                       <div class="avatar-tag">ẢNH 3x4</div>
                     </div>
                   `}
                 </div>
                 <div class="portrait-details">
-                  <div class="holy-name">${st.holyName}</div>
-                  <div class="full-name">${st.fullName}</div>
-                  <div class="info-row"><span class="lbl">Lớp:</span> <strong class="cls-name">${className}</strong></div>
-                  <div class="info-row"><span class="lbl">Mã:</span> <strong class="id-text">${st.id}</strong></div>
+                  <div class="holy-name">${safeHolyName}</div>
+                  <div class="full-name">${safeFullName}</div>
+                  <div class="info-row"><span class="lbl">Lớp:</span> <strong class="cls-name">${safeClassName}</strong></div>
+                  <div class="info-row"><span class="lbl">Mã:</span> <strong class="id-text">${safeId}</strong></div>
                 </div>
               </div>
 
@@ -126,12 +140,12 @@ export function generateCardPrintHtml(
 
               <div class="portrait-bottom">
                 <div class="portrait-qr-wrap">
-                  ${qrUrl ? `<img src="${qrUrl}" alt="QR ${st.id}" class="qr-image-portrait" />` : '<div class="qr-loading">Đang nạp QR...</div>'}
+                  ${safeQrUrl ? `<img src="${safeQrUrl}" alt="QR ${safeId}" class="qr-image-portrait" />` : '<div class="qr-loading">Đang nạp QR...</div>'}
                   <div class="qr-caption">QUÉT ĐIỂM DANH CHUYÊN CẦN</div>
                 </div>
                 <div class="portrait-footer-info">
-                  <span>${st.subParish || 'Giáo họ Don Bosco'}</span>
-                  ${options.showParentPhone ? ` • <span>${st.parentPhone || ''}</span>` : ''}
+                  <span>${safeSubParish}</span>
+                  ${options.showParentPhone ? ` • <span>${safeParentPhone}</span>` : ''}
                 </div>
               </div>
             </div>
@@ -171,7 +185,7 @@ export function generateCardPrintHtml(
         <div class="card-footer back-footer">
           <div class="back-contact">
             <div>Ban Giáo Lý Thiếu Nhi • 40 Bùi Thị Xuân, P.2, TP. Đà Lạt</div>
-            <div class="student-ref-id">Mã thẻ: <strong>${st.id}</strong> - ${st.holyName} ${st.fullName}</div>
+            <div class="student-ref-id">Mã thẻ: <strong>${safeId}</strong> - ${safeHolyName} ${safeFullName}</div>
           </div>
         </div>
       </div>

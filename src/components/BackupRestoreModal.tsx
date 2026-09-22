@@ -46,6 +46,7 @@ import {
   INITIAL_USERS, 
   INITIAL_SPECIAL_PROMOTIONS 
 } from '../data/mockData';
+import { safeJsonParse, cleanObject } from '../utils/security';
 
 interface BackupRestoreModalProps {
   currentUser: UserAccount;
@@ -149,6 +150,12 @@ export function BackupRestoreModal({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Security: Check maximum upload file size (max 15MB) to prevent denial of service
+    if (file.size > 15 * 1024 * 1024) {
+      setParseError('Tệp sao lưu vượt quá dung lượng an toàn cho phép (tối đa 15MB).');
+      return;
+    }
+
     setImportFile(file);
     setParseError(null);
     setParsedBackup(null);
@@ -157,14 +164,35 @@ export function BackupRestoreModal({
     reader.onload = (event) => {
       try {
         const text = event.target?.result as string;
-        const parsed = JSON.parse(text);
-
-        // Basic validation
-        if (!parsed.data || !Array.isArray(parsed.data.students) || !Array.isArray(parsed.data.classes)) {
-          throw new Error('Tệp sao lưu không đúng cấu trúc hệ thống Don Bosco (thiếu dữ liệu students/classes).');
+        
+        // Security: Safe JSON parsing with prototype pollution protection
+        const parsed = safeJsonParse<any>(text, null);
+        if (!parsed) {
+          throw new Error('Tệp không phải định dạng JSON hợp lệ hoặc chứa mã độc hại.');
         }
 
-        setParsedBackup(parsed as SystemBackupData);
+        // Deep clean prototype keys (__proto__, constructor, prototype)
+        const cleaned = cleanObject(parsed);
+
+        // Strict validation of backup schema
+        if (!cleaned.data || typeof cleaned.data !== 'object') {
+          throw new Error('Tệp sao lưu thiếu cấu trúc trường dữ liệu (data object).');
+        }
+
+        if (!Array.isArray(cleaned.data.students) || !Array.isArray(cleaned.data.classes)) {
+          throw new Error('Tệp sao lưu không đúng cấu trúc hệ thống Don Bosco (thiếu dữ liệu students/classes hợp lệ).');
+        }
+
+        // Validate roles in users array if present to prevent unauthorized privilege escalation
+        if (Array.isArray(cleaned.data.users)) {
+          const allowedRoles: Role[] = ['admin', 'pastor', 'catechist_leader', 'secretary', 'catechist', 'trainee', 'parent'];
+          cleaned.data.users = cleaned.data.users.map((u: any) => ({
+            ...u,
+            role: allowedRoles.includes(u.role) ? u.role : 'parent',
+          }));
+        }
+
+        setParsedBackup(cleaned as SystemBackupData);
       } catch (err: any) {
         setParseError(err.message || 'Không thể đọc tệp JSON. Vui lòng kiểm tra định dạng tệp sao lưu.');
         setParsedBackup(null);

@@ -101,10 +101,15 @@ export const StudentIdSearchModal: React.FC<StudentIdSearchModalProps> = ({
     });
   }, [students, accessibleStudents, searchIdQuery, isParishWide]);
 
-  // Active student object
+  // Active student object - strictly restricted to accessibleStudents if non-parish-wide
   const activeStudent = useMemo(() => {
-    return students.find(s => s.id === selectedStudentId) || matchedStudents[0] || accessibleStudents[0] || students[0] || null;
-  }, [students, selectedStudentId, matchedStudents, accessibleStudents]);
+    const pool = !isParishWide ? accessibleStudents : students;
+    if (selectedStudentId) {
+      const foundInPool = pool.find(s => s.id === selectedStudentId);
+      if (foundInPool) return foundInPool;
+    }
+    return matchedStudents[0] || pool[0] || null;
+  }, [students, selectedStudentId, matchedStudents, accessibleStudents, isParishWide]);
 
   const activeClass = useMemo(() => {
     if (!activeStudent) return null;

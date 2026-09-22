@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Lock, 
   User, 
@@ -11,10 +11,18 @@ import {
   Search,
   Calendar,
   PhoneCall,
-  Sparkles
+  Sparkles,
+  ShieldAlert,
+  Clock
 } from 'lucide-react';
 import { UserAccount, Role, Student, ClassRoom, Catechist, CalendarEvent, ParishInfo } from '../types';
 import { getDefaultPasswordForRole, DEFAULT_PARISH_INFO } from '../data/mockData';
+import { 
+  getRateLimitStatus, 
+  recordFailedLoginAttempt, 
+  resetFailedLoginAttempts, 
+  sanitizeText 
+} from '../utils/security';
 import { PublicStudentLookupModal } from './PublicStudentLookupModal';
 import { PublicAcademicYearModal } from './PublicAcademicYearModal';
 import { PublicOfficeContactModal } from './PublicOfficeContactModal';
@@ -45,17 +53,45 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Rate-limiting & Brute Force Protection State
+  const [rateLimit, setRateLimit] = useState(() => getRateLimitStatus());
+
+  useEffect(() => {
+    if (rateLimit.isLocked && rateLimit.remainingSeconds > 0) {
+      const interval = setInterval(() => {
+        const nextStatus = getRateLimitStatus();
+        setRateLimit(nextStatus);
+        if (!nextStatus.isLocked) {
+          clearInterval(interval);
+          setErrorMessage(null);
+        }
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [rateLimit.isLocked, rateLimit.remainingSeconds]);
+
   // Modals for public access without login
   const [isStudentLookupOpen, setIsStudentLookupOpen] = useState(false);
   const [isAcademicYearOpen, setIsAcademicYearOpen] = useState(false);
   const [isOfficeContactOpen, setIsOfficeContactOpen] = useState(false);
 
+  // Suggestions strictly restricted to Administrator (admin) and Pastor (pastor) accounts only
+  const adminAndPastorUsers = useMemo(() => {
+    return allUsers.filter(u => (u.role === 'admin' || u.role === 'pastor') && u.status === 'active');
+  }, [allUsers]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
-    const cleanUsername = username.trim().toLowerCase();
-    const cleanPassword = password.trim();
+    // Guard: rate limit lockout
+    if (rateLimit.isLocked) {
+      setErrorMessage(`Hệ thống đang tạm khóa do nhập sai nhiều lần. Vui lòng chờ ${rateLimit.remainingSeconds} giây.`);
+      return;
+    }
+
+    const cleanUsername = sanitizeText(username, 60).toLowerCase();
+    const cleanPassword = sanitizeText(password, 60);
 
     if (!cleanUsername || !cleanPassword) {
       setErrorMessage('Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.');
@@ -64,7 +100,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     setIsLoading(true);
 
-    // Simulate authenticating against registered users
+    // Simulate authenticating against registered users with defense
     setTimeout(() => {
       // 1. First look up in existing users by username, studentId, email, or phone
       let user = allUsers.find(
@@ -120,21 +156,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       if (!user) {
         setIsLoading(false);
-        setErrorMessage('Tên đăng nhập hoặc Mã học sinh không tồn tại trong hệ thống.');
+        const result = recordFailedLoginAttempt();
+        setRateLimit(result);
+        if (result.isLocked) {
+          setErrorMessage(`Bạn đã nhập sai 5 lần. Tạm khóa hệ thống ${result.remainingSeconds} giây.`);
+        } else {
+          setErrorMessage(`Tài khoản hoặc mã học sinh không tồn tại. (Còn ${result.attemptsLeft} lần thử)`);
+        }
         return;
       }
 
       if (user.status === 'locked') {
         setIsLoading(false);
-        setErrorMessage('Tài khoản này đã bị tạm khóa. Vui lòng liên hệ Cha Quản Sở hoặc Ban Quản Trị.');
+        setErrorMessage('Tài khoản này đã bị tạm khóa bởi Ban Quản Trị hoặc Cha Quản Sở.');
         return;
       }
 
-      // Check password:
-      // Default passwords:
-      // - admin, pastor, catechist_leader, secretary: 'Tngsdbdl26@'
-      // - catechist, trainee: username
-      // - parent: studentId || username
+      // Check password
       const defaultRolePassword = getDefaultPasswordForRole(user.role, user.username, user.studentId);
       const expectedPassword = user.password || defaultRolePassword;
 
@@ -150,14 +188,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       if (!isPasswordMatch) {
         setIsLoading(false);
-        setErrorMessage('Mật khẩu không chính xác. Vui lòng kiểm tra lại.');
+        const result = recordFailedLoginAttempt();
+        setRateLimit(result);
+        if (result.isLocked) {
+          setErrorMessage(`Đăng nhập thất bại quá 5 lần. Tạm dừng xác thực trong ${result.remainingSeconds} giây để bảo mật.`);
+        } else {
+          setErrorMessage(`Mật khẩu không chính xác. Còn ${result.attemptsLeft} lần thử trước khi tạm khóa.`);
+        }
         return;
       }
 
-      // Successful login
+      // Successful login -> Reset failed attempts
+      resetFailedLoginAttempts();
+      setRateLimit({ isLocked: false, remainingSeconds: 0, attempts: 0 });
       setIsLoading(false);
       onLogin(user);
-    }, 250);
+    }, 200);
   };
 
   return (
@@ -238,7 +284,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </div>
             </div>
 
-            {errorMessage && (
+            {rateLimit.isLocked && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-center gap-3 shadow-xs animate-in fade-in duration-200">
+                <div className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center shrink-0 text-rose-700">
+                  <Clock className="w-4 h-4 animate-pulse" />
+                </div>
+                <div className="flex-1">
+                  <div className="font-bold text-rose-900">Tạm thời giới hạn tốc độ đăng nhập</div>
+                  <div className="text-[11px] text-rose-700 mt-0.5">
+                    Đã nhập sai quá nhiều lần. Vui lòng đợi <strong>{rateLimit.remainingSeconds} giây</strong> để thử lại.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {errorMessage && !rateLimit.isLocked && (
               <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2 animate-in fade-in duration-200">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 <span className="font-medium">{errorMessage}</span>
@@ -248,20 +308,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <form id="system-login-form" onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
               {/* Username Input */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label htmlFor="login-username-input" className="block text-xs font-semibold text-slate-700">
-                    Tên Đăng Nhập / Mã Học Sinh
-                  </label>
-                  <button
-                    id="btn-public-lookup-student"
-                    type="button"
-                    onClick={() => setIsStudentLookupOpen(true)}
-                    className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 flex items-center gap-1 transition-colors cursor-pointer"
-                  >
-                    <Search className="w-3 h-3 text-amber-600" />
-                    <span>Tra cứu Mã HS</span>
-                  </button>
-                </div>
+                <label htmlFor="login-username-input" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Tên Đăng Nhập / Tài Khoản
+                </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                     <User className="w-4 h-4" />
@@ -271,15 +320,54 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     name="login-username"
                     type="text"
                     required
+                    disabled={rateLimit.isLocked || isLoading}
+                    maxLength={60}
                     autoComplete="off"
                     spellCheck="false"
                     placeholder="Nhập tên đăng nhập hoặc mã học sinh..."
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all font-mono"
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all font-mono disabled:opacity-50 disabled:bg-slate-100"
                     autoFocus
                   />
                 </div>
+
+                {/* Account suggestions strictly restricted to Admin and Pastor */}
+                {adminAndPastorUsers.length > 0 && (
+                  <div className="mt-2.5 p-2.5 bg-slate-50/90 rounded-xl border border-slate-200 text-xs">
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Gợi ý tài khoản quản trị & cha sở:</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {adminAndPastorUsers.map((u) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => {
+                            setUsername(u.username);
+                            setPassword(u.password || 'Tngsdbdl26@');
+                            setErrorMessage(null);
+                          }}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer shadow-2xs ${
+                            u.role === 'pastor'
+                              ? 'bg-amber-50 hover:bg-amber-100/80 text-amber-900 border-amber-300 hover:border-amber-400'
+                              : 'bg-indigo-50 hover:bg-indigo-100/80 text-indigo-950 border-indigo-200 hover:border-indigo-300'
+                          }`}
+                          title={`Chọn nhanh tài khoản ${u.name}`}
+                        >
+                          <span>{u.role === 'pastor' ? '✝️ Cha Sở' : '🛡️ Quản trị'}</span>
+                          <span className="font-mono text-slate-600 text-[10px]">@{u.username}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1.5 italic">
+                      * Các chức vụ khác (Giáo lý viên, Dự trưởng, Phụ huynh...) vui lòng tự nhập tài khoản và mật khẩu được cấp.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Password Input */}
@@ -296,12 +384,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     name="login-password"
                     type={showPassword ? 'text' : 'password'}
                     required
+                    disabled={rateLimit.isLocked || isLoading}
+                    maxLength={60}
                     autoComplete="new-password"
                     spellCheck="false"
                     placeholder="Nhập mật khẩu..."
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all font-mono"
+                    className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all font-mono disabled:opacity-50 disabled:bg-slate-100"
                   />
                   <button
                     id="btn-toggle-login-password"
@@ -332,11 +422,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || rateLimit.isLocked}
                 className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white font-bold rounded-xl text-xs shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isLoading ? (
                   <span>Đang xác thực bảo mật...</span>
+                ) : rateLimit.isLocked ? (
+                  <span>Tạm khóa ({rateLimit.remainingSeconds}s)...</span>
                 ) : (
                   <>
                     <ShieldCheck className="w-4 h-4" />
@@ -363,10 +455,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         students={students}
         classes={classes}
         catechists={catechists}
-        onSelectForLogin={(studentId) => {
-          setUsername(studentId);
-          setPassword(studentId);
-        }}
       />
 
       <PublicAcademicYearModal
