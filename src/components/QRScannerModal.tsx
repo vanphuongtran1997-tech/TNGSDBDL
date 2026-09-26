@@ -21,7 +21,11 @@ import {
   Zap,
   Volume2,
   VolumeX,
-  History
+  History,
+  FlipHorizontal,
+  Flashlight,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { Student, AttendanceStatus, ClassRoom, AttendanceTimeSlot, UserAccount, CustomDateSchedule, AttendanceRecord } from '../types';
@@ -120,8 +124,33 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [hasTorch, setHasTorch] = useState<boolean>(false);
+  const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
+  const [showMobileConfig, setShowMobileConfig] = useState<boolean>(false);
+  const currentTrackRef = useRef<MediaStreamTrack | null>(null);
   const [flashSuccess, setFlashSuccess] = useState<boolean>(false);
   const [cameraRestartCount, setCameraRestartCount] = useState<number>(0);
+
+  // Toggle front / back camera (crucial for mobile phones)
+  const toggleFacingMode = () => {
+    setSelectedCameraId('');
+    setFacingMode(prev => (prev === 'environment' ? 'user' : 'environment'));
+  };
+
+  // Toggle flashlight / torch on mobile if hardware supports it
+  const toggleTorch = async () => {
+    if (!currentTrackRef.current) return;
+    try {
+      const nextTorch = !isTorchOn;
+      await (currentTrackRef.current as any).applyConstraints({
+        advanced: [{ torch: nextTorch }]
+      });
+      setIsTorchOn(nextTorch);
+    } catch (e) {
+      console.warn('Torch toggle not supported or failed:', e);
+    }
+  };
 
   // Non-blocking toast notifications for camera/scan (replaces blocking alert dialogs)
   const [scanNotification, setScanNotification] = useState<{
@@ -510,18 +539,9 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       navigator.mediaDevices.enumerateDevices().then(devices => {
         const videoDevices = devices.filter(d => d.kind === 'videoinput');
         setAvailableCameras(videoDevices);
-        if (videoDevices.length > 0 && !selectedCameraId) {
-          // Prefer back camera if available
-          const backCam = videoDevices.find(d => 
-            d.label.toLowerCase().includes('back') || 
-            d.label.toLowerCase().includes('sau') || 
-            d.label.toLowerCase().includes('environment')
-          );
-          setSelectedCameraId(backCam ? backCam.deviceId : videoDevices[0].deviceId);
-        }
       }).catch(() => {});
     }
-  }, [selectedCameraId]);
+  }, []);
 
   // Start Camera Stream & Scanning Loop
   useEffect(() => {
@@ -555,65 +575,56 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         if (!navigator?.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           setIsCameraActive(false);
           setIsCameraLoading(false);
-          setCameraError('Trình duyệt không hỗ trợ truy cập Camera trực tiếp. Vui lòng chuyển sang chế độ Tải Ảnh QR hoặc Nhập Mã Học Sinh để điểm danh.');
+          setCameraError('Trình duyệt của bạn không hỗ trợ camera web (getUserMedia). Vui lòng dùng Safari/Chrome bản mới nhất hoặc dùng chế độ Tải Ảnh QR / Nhập Mã.');
           return;
-        }
-
-        // Pre-check if hardware video devices exist
-        if (navigator.mediaDevices.enumerateDevices) {
-          try {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const videoInputs = devices.filter(d => d.kind === 'videoinput');
-            // If device enumeration lists hardware devices but explicitly 0 video cameras
-            if (devices.length > 0 && videoInputs.length === 0) {
-              if (!isMounted) return;
-              setIsCameraActive(false);
-              setIsCameraLoading(false);
-              console.warn('No video input hardware detected on this device.');
-              setCameraError('Không tìm thấy thiết bị Camera trên máy (chưa cắm webcam). Bạn có thể dùng chế độ "Tải Ảnh QR" hoặc "Nhập Mã Học Sinh" ở phía trên để điểm danh.');
-              return;
-            }
-          } catch {
-            // Ignore enumeration errors and proceed to getUserMedia
-          }
         }
 
         let stream: MediaStream | null = null;
 
-        // 1. Try exact camera if selected
+        // 1. If user explicitly selected a camera device ID, try it first
         if (selectedCameraId) {
           try {
             stream = await navigator.mediaDevices.getUserMedia({
               video: {
-                deviceId: { exact: selectedCameraId },
+                deviceId: { ideal: selectedCameraId },
                 width: { ideal: 1280 },
                 height: { ideal: 720 }
-              }
+              },
+              audio: false
             });
           } catch (camErr) {
-            console.warn('Selected device camera failed, attempting fallback...', camErr);
+            console.warn('Selected device camera failed, attempting facingMode...', camErr);
           }
         }
 
-        // 2. Try back-facing environment camera
+        // 2. Try facingMode (environment = rear camera on phone, user = selfie camera)
         if (!stream) {
           try {
             stream = await navigator.mediaDevices.getUserMedia({
               video: {
-                facingMode: { ideal: 'environment' },
+                facingMode: { ideal: facingMode },
                 width: { ideal: 1280 },
                 height: { ideal: 720 }
-              }
+              },
+              audio: false
             });
           } catch (envErr) {
-            console.warn('FacingMode environment failed, attempting generic video...', envErr);
+            console.warn('FacingMode ideal failed, attempting facingMode string...', envErr);
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: facingMode },
+                audio: false
+              });
+            } catch (e2) {
+              console.warn('FacingMode string failed, attempting generic video...', e2);
+            }
           }
         }
 
         // 3. Fallback to basic generic video
         if (!stream) {
           try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
           } catch (genericErr) {
             console.warn('Generic getUserMedia failed:', genericErr);
             throw genericErr;
@@ -627,18 +638,64 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           return;
         }
 
+        // Check torch capabilities on the active video track
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          currentTrackRef.current = videoTrack;
+          try {
+            const capabilities: any = typeof videoTrack.getCapabilities === 'function' ? videoTrack.getCapabilities() : {};
+            setHasTorch(Boolean(capabilities && capabilities.torch));
+          } catch {
+            setHasTorch(false);
+          }
+        }
+
+        // Now that camera permission is active, enumerate devices so real camera labels appear
+        if (navigator.mediaDevices.enumerateDevices) {
+          navigator.mediaDevices.enumerateDevices().then(devices => {
+            if (!isMounted) return;
+            const videoDevices = devices.filter(d => d.kind === 'videoinput');
+            setAvailableCameras(videoDevices);
+          }).catch(() => {});
+        }
+
         if (videoRef.current) {
           const video = videoRef.current;
-          video.srcObject = stream;
+          // Set essential video properties before assigning srcObject for iOS WebKit & Android
+          video.muted = true;
+          video.defaultMuted = true;
+          video.playsInline = true;
           video.setAttribute('playsinline', 'true');
-          
+          video.setAttribute('webkit-playsinline', 'true');
+          video.srcObject = stream;
+
+          // Wait for metadata or first frame with safety timeout (max 600ms)
           await new Promise<void>((resolve) => {
-            if (video.readyState >= 1) return resolve();
-            video.onloadedmetadata = () => resolve();
+            let done = false;
+            const finish = () => {
+              if (!done) {
+                done = true;
+                resolve();
+              }
+            };
+
+            if (video.readyState >= 1) {
+              finish();
+              return;
+            }
+
+            video.onloadedmetadata = finish;
+            video.oncanplay = finish;
+            video.onloadeddata = finish;
+
+            // Safety timeout: Never hang infinitely on mobile Safari
+            setTimeout(finish, 600);
           });
 
           await video.play().catch((playErr) => {
-            console.warn('Video playback warning:', playErr);
+            console.warn('Video playback warning (trying second play with muted):', playErr);
+            video.muted = true;
+            return video.play().catch(e => console.warn('Second play attempt error:', e));
           });
 
           if (isMounted) {
@@ -763,7 +820,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         currentStream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [activeMode, selectedCameraId, cameraRestartCount, handleStudentDetected]);
+  }, [activeMode, selectedCameraId, facingMode, cameraRestartCount, handleStudentDetected]);
 
   // Handle QR Scan from uploaded image file
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -838,46 +895,42 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto backdrop-blur-xs">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[94vh] flex flex-col my-auto border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-0 sm:p-4 overflow-y-auto backdrop-blur-xs">
+      <div className="bg-white sm:rounded-2xl rounded-none shadow-2xl w-full max-w-4xl h-full sm:h-auto sm:max-h-[94vh] flex flex-col my-auto border-0 sm:border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         
         {/* Header */}
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-900 text-white">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center text-slate-950 font-bold">
+        <div className="p-3 sm:p-4 border-b border-slate-200 flex items-center justify-between bg-slate-900 text-white shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center text-slate-950 font-bold shrink-0">
               <Camera className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-                  Quét Mã QR & Tính Giờ Điểm Danh Tự Động
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <h2 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider truncate">
+                  Quét Mã QR Điểm Danh Tự Động
                 </h2>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 border border-emerald-400/40 text-[10px] font-black flex items-center gap-1">
                   <Zap className="w-3 h-3 text-emerald-400 fill-emerald-400" />
-                  Điểm Danh Tức Thì (1 Bước - Không Cần Bấm Thêm)
-                </span>
-                <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 text-[10px] font-bold flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  Chuẩn hóa theo giờ thực tế
+                  1 Bước - Tức thì
                 </span>
                 {assignedClassName && (
-                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[10px] font-bold flex items-center gap-1">
+                  <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[10px] font-bold items-center gap-1">
                     <Lock className="w-3 h-3" />
                     Chỉ điểm danh: {assignedClassName}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-300">
+              <p className="hidden sm:block text-xs text-slate-300">
                 Tự động nhận diện Đúng Giờ (Loại A) hoặc Đi Trễ (Loại B, -0.1đ) theo giờ Thánh Lễ & Giáo Lý
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Sound Toggle Button */}
             <button
               type="button"
               onClick={toggleSound}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+              className={`px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors cursor-pointer border ${
                 soundOn
                   ? 'bg-amber-500/20 text-amber-200 border-amber-400/40 hover:bg-amber-500/30'
                   : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
@@ -893,18 +946,18 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
               <button
                 type="button"
                 onClick={() => onOpenHistoryModal()}
-                className="px-2.5 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-blue-400/30 cursor-pointer"
+                className="px-2 sm:px-2.5 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 rounded-lg text-xs font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors border border-blue-400/30 cursor-pointer"
                 title="Xem lịch sử điểm danh của học sinh hoặc lớp"
               >
                 <History className="w-4 h-4 text-blue-300" />
-                <span className="hidden sm:inline">Lịch Sử Điểm Danh</span>
+                <span className="hidden sm:inline">Lịch Sử</span>
               </button>
             )}
 
             <button 
               id="close-qr-scanner-btn"
               onClick={onClose} 
-              className="text-slate-400 hover:text-white p-1 rounded-md transition-colors cursor-pointer ml-1"
+              className="text-slate-400 hover:text-white p-1 rounded-md transition-colors cursor-pointer ml-0.5"
               title="Đóng cửa sổ quét QR"
             >
               <X className="w-5 h-5" />
@@ -913,221 +966,269 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         </div>
 
         {/* 3 Interactive Modes Navigation */}
-        <div className="flex border-b border-slate-200 bg-slate-100 px-4 pt-2 gap-2 text-xs overflow-x-auto">
+        <div className="flex border-b border-slate-200 bg-slate-100 px-3 sm:px-4 pt-1.5 sm:pt-2 gap-1.5 sm:gap-2 text-xs overflow-x-auto shrink-0">
           <button
             type="button"
             id="qr-mode-camera-btn"
             onClick={() => setActiveMode('camera')}
-            className={`px-3.5 py-2 font-bold rounded-t-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`px-3 py-1.5 sm:px-3.5 sm:py-2 font-bold rounded-t-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap text-xs ${
               activeMode === 'camera'
                 ? 'bg-white text-slate-900 border-t-2 border-amber-500 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
           >
             <Camera className="w-3.5 h-3.5 text-amber-600" />
-            <span>1. Quét Bằng Camera</span>
+            <span>1. Quét Camera</span>
           </button>
 
           <button
             type="button"
             id="qr-mode-upload-btn"
             onClick={() => setActiveMode('upload')}
-            className={`px-3.5 py-2 font-bold rounded-t-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`px-3 py-1.5 sm:px-3.5 sm:py-2 font-bold rounded-t-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap text-xs ${
               activeMode === 'upload'
                 ? 'bg-white text-slate-900 border-t-2 border-amber-500 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
           >
             <Upload className="w-3.5 h-3.5 text-emerald-600" />
-            <span>2. Tải Lên Ảnh Chụp Mã QR</span>
+            <span>2. Tải Ảnh Thẻ QR</span>
           </button>
 
           <button
             type="button"
             id="qr-mode-manual-btn"
             onClick={() => setActiveMode('manual')}
-            className={`px-3.5 py-2 font-bold rounded-t-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`px-3 py-1.5 sm:px-3.5 sm:py-2 font-bold rounded-t-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap text-xs ${
               activeMode === 'manual'
                 ? 'bg-white text-slate-900 border-t-2 border-amber-500 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
           >
             <Keyboard className="w-3.5 h-3.5 text-blue-600" />
-            <span>3. Nhập Mã Học Sinh (DBS-xxx)</span>
+            <span>3. Nhập Mã HS</span>
           </button>
         </div>
 
-        {/* Dynamic Time Slot & Session Configuration Bar */}
-        <div className="p-3 bg-slate-50 border-b border-slate-200 space-y-2.5 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
-            {/* Session Date */}
-            <div>
-              <label className="block text-slate-600 font-semibold mb-1">Ngày Điểm Danh:</label>
-              <input
-                type="date"
-                value={sessionDate}
-                onChange={(e) => setSessionDate(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 font-medium text-xs focus:ring-1 focus:ring-amber-500"
-              />
+        {/* Dynamic Time Slot & Session Configuration Bar (Collapsible on Mobile) */}
+        <div className="p-2 sm:p-3 bg-slate-50 border-b border-slate-200 text-xs shrink-0">
+          {/* Mobile compact header banner */}
+          <div className="flex sm:hidden items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 font-semibold text-slate-700 min-w-0">
+              <span className="truncate">{sessionType} • {currentEvaluation.slotLabel}</span>
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                currentEvaluation.status === 'A' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+              }`}>
+                {currentEvaluation.status === 'A' ? 'Đúng giờ (A)' : 'Trễ (B)'}
+              </span>
             </div>
-
-            {/* Session Type */}
-            <div>
-              <label className="block text-slate-600 font-semibold mb-1">Buổi Sinh Hoạt:</label>
-              <select
-                value={sessionType}
-                onChange={(e) => setSessionType(e.target.value as 'Chúa Nhật' | 'Thứ 5')}
-                className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 font-medium text-xs focus:ring-1 focus:ring-amber-500"
-              >
-                <option value="Chúa Nhật">Chúa Nhật (7h30 tập trung • 8h00 Thánh lễ • 9h15 học giáo lý)</option>
-                <option value="Thứ 5">Thứ 5 (2 lớp Bí Tích: 18h00 Học Giáo Lý)</option>
-              </select>
-            </div>
-
-            {/* Khung Giờ Điểm Danh (Time Slot) */}
-            <div>
-              <label className="block text-slate-600 font-semibold mb-1">Khung Giờ Tham Dự:</label>
-              <select
-                value={timeSlotMode}
-                onChange={(e) => setTimeSlotMode(e.target.value as AttendanceTimeSlot | 'auto')}
-                className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 font-medium text-xs focus:ring-1 focus:ring-amber-500"
-              >
-                <option value="auto">⚡ Tự động nhận diện theo giờ quét</option>
-                {sessionType === 'Chúa Nhật' ? (
-                  <>
-                    <option value="tap_trung">1. Giờ Tập Trung (Mốc 07:30)</option>
-                    <option value="gio_le">2. Giờ Thánh Lễ (Mốc 08:00)</option>
-                    <option value="giao_ly">3. Giờ Học Giáo Lý (Mốc 09:15)</option>
-                  </>
-                ) : (
-                  <option value="giao_ly">Học Giáo Lý Thứ 5 (Mốc 18:00 - mốc duy nhất)</option>
-                )}
-              </select>
-            </div>
-
-            {/* Real Clock / Test Time Switcher */}
-            <div className="bg-white p-2 rounded-lg border border-slate-200 flex flex-col justify-between">
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-amber-600" />
-                  Đồng Hồ Điểm Danh:
-                </span>
-                <span className="font-mono font-bold text-amber-700 text-xs">{effectiveScanTime}</span>
-              </div>
-
-              <div className="flex items-center justify-between pt-1 text-[10px] text-slate-500">
-                <label className="flex items-center gap-1 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={useSimulatedTime}
-                    onChange={(e) => setUseSimulatedTime(e.target.checked)}
-                    className="rounded text-amber-600 focus:ring-amber-500"
-                  />
-                  <span>Thử nghiệm mốc giờ</span>
-                </label>
-
-                {useSimulatedTime && (
-                  <input
-                    type="time"
-                    value={simulatedTime}
-                    onChange={(e) => setSimulatedTime(e.target.value)}
-                    className="border border-amber-300 rounded px-1.5 py-0.5 text-xs font-mono font-bold bg-amber-50 text-amber-900 w-20"
-                  />
-                )}
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowMobileConfig(!showMobileConfig)}
+              className="text-xs text-blue-700 hover:text-blue-900 font-semibold flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md shrink-0 cursor-pointer"
+            >
+              <span>{showMobileConfig ? 'Thu gọn' : 'Chỉnh giờ'}</span>
+              {showMobileConfig ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
           </div>
 
-          {/* Time Evaluation Live Status Banner */}
-          <div className="bg-white rounded-lg p-2.5 border border-slate-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                <Timer className="w-3.5 h-3.5 text-blue-600" />
-                Khung giờ:
-              </span>
-              <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-900 font-bold text-xs">
-                {currentEvaluation.slotLabel}
-              </span>
-              <span className="text-slate-600 text-xs">
-                (Mốc đúng giờ: <strong className="font-mono">{currentEvaluation.targetTime}</strong>
-                {effectiveScheduleInfo.isCustom && (
-                  <span className="ml-1 text-amber-900 font-bold bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded text-[10px]">
-                    ⚡ {effectiveScheduleInfo.customSchedule?.title || 'Ngoại thường'}
-                  </span>
-                )}
-                )
-              </span>
+          <div className={`${showMobileConfig ? 'block' : 'hidden'} sm:block space-y-2.5 mt-2 sm:mt-0`}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-2.5">
+              {/* Session Date */}
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">Ngày Điểm Danh:</label>
+                <input
+                  type="date"
+                  value={sessionDate}
+                  onChange={(e) => setSessionDate(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 font-medium text-xs focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
 
-              <button
-                type="button"
-                id="qr-change-schedule-btn"
-                onClick={() => setIsScheduleModalOpen(true)}
-                className={`ml-1 px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1 border transition-all ${
-                  effectiveScheduleInfo.isCustom
-                    ? 'bg-amber-500 text-slate-950 border-amber-600 hover:bg-amber-400 font-bold shadow-2xs'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
-                }`}
-                title="Thay đổi mốc giờ đúng giờ / đi muộn của ngày hôm nay (ngoại thường)"
-              >
-                <Clock className="w-3 h-3 text-current" />
-                <span>{effectiveScheduleInfo.isCustom ? 'Sửa Giờ Ngoại Thường' : '⚙ Thay Đổi Giờ Ngày Này'}</span>
-              </button>
+              {/* Session Type */}
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">Buổi Sinh Hoạt:</label>
+                <select
+                  value={sessionType}
+                  onChange={(e) => setSessionType(e.target.value as 'Chúa Nhật' | 'Thứ 5')}
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 font-medium text-xs focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="Chúa Nhật">Chúa Nhật (7h30 tập trung • 8h00 Thánh lễ • 9h15 học giáo lý)</option>
+                  <option value="Thứ 5">Thứ 5 (2 lớp Bí Tích: 18h00 Học Giáo Lý)</option>
+                </select>
+              </div>
+
+              {/* Khung Giờ Điểm Danh (Time Slot) */}
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">Khung Giờ Tham Dự:</label>
+                <select
+                  value={timeSlotMode}
+                  onChange={(e) => setTimeSlotMode(e.target.value as AttendanceTimeSlot | 'auto')}
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 font-medium text-xs focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="auto">⚡ Tự động nhận diện theo giờ quét</option>
+                  {sessionType === 'Chúa Nhật' ? (
+                    <>
+                      <option value="tap_trung">1. Giờ Tập Trung (Mốc 07:30)</option>
+                      <option value="gio_le">2. Giờ Thánh Lễ (Mốc 08:00)</option>
+                      <option value="giao_ly">3. Giờ Học Giáo Lý (Mốc 09:15)</option>
+                    </>
+                  ) : (
+                    <option value="giao_ly">Học Giáo Lý Thứ 5 (Mốc 18:00 - mốc duy nhất)</option>
+                  )}
+                </select>
+              </div>
+
+              {/* Real Clock / Test Time Switcher */}
+              <div className="bg-white p-2 rounded-lg border border-slate-200 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    Đồng Hồ Điểm Danh:
+                  </span>
+                  <span className="font-mono font-bold text-amber-700 text-xs">{effectiveScanTime}</span>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 text-[10px] text-slate-500">
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useSimulatedTime}
+                      onChange={(e) => setUseSimulatedTime(e.target.checked)}
+                      className="rounded text-amber-600 focus:ring-amber-500"
+                    />
+                    <span>Thử nghiệm mốc giờ</span>
+                  </label>
+
+                  {useSimulatedTime && (
+                    <input
+                      type="time"
+                      value={simulatedTime}
+                      onChange={(e) => setSimulatedTime(e.target.value)}
+                      className="border border-amber-300 rounded px-1.5 py-0.5 text-xs font-mono font-bold bg-amber-50 text-amber-900 w-20"
+                    />
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-600">Khi quét lúc này sẽ tính:</span>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                currentEvaluation.status === 'A' ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-amber-100 text-amber-900 border border-amber-300'
-              }`}>
-                {currentEvaluation.status === 'A' ? '✓ Loại A (Đạt - Đúng Giờ)' : `⚠ Loại B (Trễ ${currentEvaluation.lateMinutes}p, -0.1đ)`}
-              </span>
+            {/* Time Evaluation Live Status Banner */}
+            <div className="bg-white rounded-lg p-2.5 border border-slate-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                  <Timer className="w-3.5 h-3.5 text-blue-600" />
+                  Khung giờ:
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-900 font-bold text-xs">
+                  {currentEvaluation.slotLabel}
+                </span>
+                <span className="text-slate-600 text-xs">
+                  (Mốc đúng giờ: <strong className="font-mono">{currentEvaluation.targetTime}</strong>
+                  {effectiveScheduleInfo.isCustom && (
+                    <span className="ml-1 text-amber-900 font-bold bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded text-[10px]">
+                      ⚡ {effectiveScheduleInfo.customSchedule?.title || 'Ngoại thường'}
+                    </span>
+                  )}
+                  )
+                </span>
+
+                <button
+                  type="button"
+                  id="qr-change-schedule-btn"
+                  onClick={() => setIsScheduleModalOpen(true)}
+                  className={`ml-1 px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1 border transition-all ${
+                    effectiveScheduleInfo.isCustom
+                      ? 'bg-amber-500 text-slate-950 border-amber-600 hover:bg-amber-400 font-bold shadow-2xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                  }`}
+                  title="Thay đổi mốc giờ đúng giờ / đi muộn của ngày hôm nay (ngoại thường)"
+                >
+                  <Clock className="w-3 h-3 text-current" />
+                  <span>{effectiveScheduleInfo.isCustom ? 'Sửa Giờ Ngoại Thường' : '⚙ Thay Đổi Giờ Ngày Này'}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-600">Khi quét lúc này sẽ tính:</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                  currentEvaluation.status === 'A' ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-amber-100 text-amber-900 border border-amber-300'
+                }`}>
+                  {currentEvaluation.status === 'A' ? '✓ Loại A (Đạt - Đúng Giờ)' : `⚠ Loại B (Trễ ${currentEvaluation.lateMinutes}p, -0.1đ)`}
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Scanner & Live Results */}
-        <div className="p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 overflow-y-auto">
+        <div className="p-3 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 flex-1 overflow-y-auto">
           {/* Main Left Area: Camera, File Upload, or Manual ID */}
           <div className="lg:col-span-7 flex flex-col">
             {activeMode === 'camera' && (
-              <div className="flex flex-col items-center justify-center bg-slate-950 rounded-xl p-4 text-white relative min-h-[340px]">
-                {/* Camera device selection bar */}
-                <div className="w-full mb-3 flex items-center justify-between text-xs bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800 flex-wrap gap-2">
-                  <span className="text-slate-300 flex items-center gap-1 text-[11px]">
-                    <SwitchCamera className="w-3.5 h-3.5 text-amber-400" />
-                    Thiết bị camera:
-                  </span>
-                  
+              <div className="flex flex-col items-center justify-center bg-slate-950 rounded-xl p-3 sm:p-4 text-white relative min-h-[300px]">
+                {/* Camera device selection & mobile controls bar */}
+                <div className="w-full mb-2.5 flex items-center justify-between text-xs bg-slate-900/90 px-3 py-2 rounded-xl border border-slate-800 flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Front / Back camera toggle (crucial for mobile phones) */}
+                    <button
+                      type="button"
+                      onClick={toggleFacingMode}
+                      className="px-2.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Chuyển đổi Camera Sau (môi trường) / Camera Trước (selfie)"
+                    >
+                      <FlipHorizontal className="w-3.5 h-3.5" />
+                      <span>{facingMode === 'environment' ? 'Camera Sau' : 'Camera Trước'}</span>
+                    </button>
+
+                    {/* Torch / Flashlight Toggle (if supported on mobile) */}
+                    {hasTorch && (
+                      <button
+                        type="button"
+                        onClick={toggleTorch}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                          isTorchOn
+                            ? 'bg-yellow-400 text-slate-950 border-yellow-300 font-bold'
+                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                        }`}
+                        title="Bật/Tắt đèn pin hỗ trợ quét mã trong bóng tối"
+                      >
+                        <Flashlight className="w-3.5 h-3.5" />
+                        <span>{isTorchOn ? 'Tắt Đèn' : 'Bật Đèn'}</span>
+                      </button>
+                    )}
+                  </div>
+
                   <div className="flex items-center gap-2">
-                    {availableCameras.length > 0 ? (
+                    {availableCameras.length > 1 && (
                       <select
                         value={selectedCameraId}
                         onChange={(e) => setSelectedCameraId(e.target.value)}
-                        className="bg-slate-800 text-white border border-slate-700 rounded px-2 py-1 text-xs max-w-[200px] truncate"
+                        className="bg-slate-800 text-white border border-slate-700 rounded px-2 py-1 text-xs max-w-[140px] sm:max-w-[180px] truncate"
+                        title="Chọn camera cụ thể"
                       >
+                        <option value="">Tự động ({facingMode === 'environment' ? 'Sau' : 'Trước'})</option>
                         {availableCameras.map((cam, idx) => (
                           <option key={cam.deviceId || idx} value={cam.deviceId}>
                             {cam.label || `Camera ${idx + 1}`}
                           </option>
                         ))}
                       </select>
-                    ) : (
-                      <span className="text-slate-400 text-[11px]">Đang dò camera...</span>
                     )}
 
                     <button
                       type="button"
                       onClick={() => setCameraRestartCount(c => c + 1)}
-                      className="p-1 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors"
+                      className="p-1.5 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
                       title="Khởi động lại camera"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline text-[11px]">Tải lại</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Video Viewport - ALWAYS IN DOM so videoRef is ready */}
-                <div className={`relative w-full aspect-4/3 max-w-md rounded-xl overflow-hidden border-2 transition-all bg-black flex items-center justify-center ${
+                <div className={`relative w-full aspect-[4/3] max-h-[46vh] sm:max-h-none max-w-md rounded-xl overflow-hidden border-2 transition-all bg-black flex items-center justify-center ${
                   flashSuccess ? 'border-emerald-400 ring-4 ring-emerald-400/50 scale-[1.01]' : 'border-amber-400/80 shadow-lg'
                 }`}>
                   <video 
@@ -1243,6 +1344,17 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                         >
                           <RefreshCw className="w-3.5 h-3.5" />
                           <span>Thử Lại Camera</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            toggleFacingMode();
+                            setCameraRestartCount(c => c + 1);
+                          }}
+                          className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-amber-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer border border-slate-600"
+                        >
+                          <FlipHorizontal className="w-3.5 h-3.5" />
+                          <span>Đổi Camera ({facingMode === 'environment' ? 'Trước' : 'Sau'})</span>
                         </button>
                         <button
                           type="button"

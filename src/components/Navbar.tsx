@@ -578,7 +578,44 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile Bottom Navigation Bar (Fixed thumb-reach for smartphones) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg px-2 py-1 flex items-center justify-around safe-area-bottom">
-        {bottomQuickTabs.map((item) => {
+        {bottomQuickTabs.slice(0, 2).map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-lg text-[10px] transition-colors cursor-pointer ${
+                isActive
+                  ? 'text-amber-800 font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <div className={`p-1 rounded-full ${isActive ? 'bg-amber-100 text-amber-800' : ''}`}>
+                <Icon className="w-4 h-4" />
+              </div>
+              <span className="truncate max-w-[68px] mt-0.5">{item.label.split(' ')[0]}</span>
+            </button>
+          );
+        })}
+
+        {/* Central Prominent QR Scanner Button on Mobile */}
+        {permissions.canScanQR && (
+          <button
+            type="button"
+            id="mobile-bottom-quick-scan-btn"
+            onClick={onOpenQRScanner}
+            className="flex flex-col items-center justify-center -mt-5 p-1 group cursor-pointer shrink-0"
+            title="Quét thẻ QR điểm danh tức thì"
+          >
+            <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-500 to-amber-400 text-slate-950 flex items-center justify-center shadow-lg border-2 border-white ring-2 ring-amber-400/60 group-active:scale-95 transition-transform">
+              <QrCode className="w-6 h-6 stroke-[2.3]" />
+            </div>
+            <span className="text-[10px] font-extrabold text-amber-900 mt-0.5">Quét QR</span>
+          </button>
+        )}
+
+        {bottomQuickTabs.slice(2).map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
           return (
