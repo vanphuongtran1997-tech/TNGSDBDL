@@ -32,6 +32,7 @@ import {
   evaluatePromotionAndRank,
   formatVNCurrency
 } from '../utils/calculations';
+import { playSuccessChime, playAlreadyMarkedChime } from '../utils/soundUtils';
 
 interface StudentIdSearchModalProps {
   students: Student[];
@@ -206,8 +207,18 @@ export const StudentIdSearchModal: React.FC<StudentIdSearchModalProps> = ({
       return;
     }
     const today = new Date().toISOString().split('T')[0];
+
+    // Kiểm tra đã điểm danh hôm nay chưa
+    const existing = attendanceRecords.find(r => r.studentId === activeStudent.id && r.date === today);
+    if (existing) {
+      playAlreadyMarkedChime();
+      alert(`⚠️ HỌC SINH ĐÃ ĐƯỢC ĐIỂM DANH HÔM NAY:\n${activeStudent.holyName} ${activeStudent.fullName} (${activeStudent.id}) đã được ghi nhận ngày ${today} (Trạng thái: ${existing.status}). Mỗi mã học sinh chỉ điểm danh 1 lần duy nhất trong ngày.`);
+      return;
+    }
+
+    playSuccessChime(status === 'B');
     onQuickMarkAttendance(activeStudent.id, status, today, 'Chúa Nhật');
-    setQuickAttendanceSuccess(`Đã ghi nhận điểm danh loại [${status}] cho ${activeStudent.holyName} ${activeStudent.fullName} (${activeStudent.id}) ngày ${today}`);
+    setQuickAttendanceSuccess(`✓ Đã ghi nhận điểm danh loại [${status}] cho ${activeStudent.holyName} ${activeStudent.fullName} (${activeStudent.id}) ngày ${today}`);
     setTimeout(() => {
       setQuickAttendanceSuccess(null);
     }, 3500);
@@ -341,7 +352,7 @@ export const StudentIdSearchModal: React.FC<StudentIdSearchModalProps> = ({
         {/* Main Content Area */}
         <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
           {/* Left Column: Matched Students List */}
-          <div className="lg:col-span-4 p-3 bg-slate-50/50 max-h-[60vh] lg:max-h-none overflow-y-auto space-y-1.5">
+          <div className="lg:col-span-4 p-3 bg-slate-50/50 max-h-48 sm:max-h-64 lg:max-h-none overflow-y-auto space-y-1.5 shrink-0">
             <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1 pb-1 flex items-center justify-between">
               <span>Danh Sách Kết Quả ({matchedStudents.length})</span>
               <span className="text-[10px] text-slate-400">Nhấp để xem hồ sơ</span>

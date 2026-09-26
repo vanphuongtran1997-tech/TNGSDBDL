@@ -20,11 +20,17 @@ import {
   UserX,
   FileEdit,
   X,
-  Zap
+  Zap,
+  LayoutGrid,
+  List,
+  Sparkles,
+  History
 } from 'lucide-react';
 import { Student, ClassRoom, AttendanceRecord, AttendanceStatus, Role, AttendanceTimeSlot, CustomDateSchedule } from '../types';
 import { calculateSemesterAttendanceScore } from '../utils/calculations';
 import { checkAttendanceEditPermission, getEffectiveTimeConfigs } from '../utils/attendanceTimeUtils';
+import { playSuccessChime, playAlreadyMarkedChime, playErrorChime } from '../utils/soundUtils';
+import { AttendanceHistoryModal } from './AttendanceHistoryModal';
 
 interface AttendanceManagerProps {
   students: Student[];
@@ -92,6 +98,14 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
     text: string;
     isSuccess: boolean;
   } | null>(null);
+
+  // View Mode: day_focus (mobile-optimized) vs matrix (desktop spreadsheet)
+  const [attendanceViewMode, setAttendanceViewMode] = useState<'day_focus' | 'matrix'>(() => typeof window !== 'undefined' && window.innerWidth < 768 ? 'day_focus' : 'matrix');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'unrecorded' | 'A' | 'B' | 'C' | 'D'>('all');
+
+  // Attendance History Modal State
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historyModalStudentId, setHistoryModalStudentId] = useState<string | undefined>(undefined);
 
   const selectedClass = classes.find(c => c.id === selectedClassId) || classes[0];
   const classStudents = students.filter(s => {
@@ -182,11 +196,31 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
     });
 
     if (!student) {
+      playErrorChime();
       setQuickScanToast({
         text: `Không tìm thấy học sinh với mã: "${raw}". Vui lòng kiểm tra lại.`,
         isSuccess: false
       });
       setTimeout(() => setQuickScanToast(null), 3500);
+      return;
+    }
+
+    // KIỂM TRA ĐIỀU KIỆN: Mỗi mã QR/Mã học sinh chỉ được điểm danh 1 lần duy nhất trong ngày
+    const existingToday = attendanceRecords.find(
+      r => r.studentId === student.id && r.date === activeDate
+    );
+
+    if (existingToday) {
+      playAlreadyMarkedChime();
+      const statusLabel = existingToday.status === 'A' ? 'Đạt (A)' :
+                          existingToday.status === 'B' ? 'Trễ (B)' :
+                          existingToday.status === 'C' ? 'Có Phép (C)' : 'Vắng (D)';
+      setQuickScanToast({
+        text: `⚠️ Học sinh ${student.holyName} ${student.fullName} (${student.id}) ĐÃ ĐIỂM DANH TRƯỚC ĐÓ lúc ${existingToday.scanTime || 'trong ngày'} (${statusLabel}). Mỗi mã chỉ điểm danh 1 lần duy nhất trong ngày!`,
+        isSuccess: false
+      });
+      setQuickScanCode('');
+      setTimeout(() => setQuickScanToast(null), 4500);
       return;
     }
 
@@ -196,6 +230,9 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
     }
 
     const nowTime = new Date().toTimeString().slice(0, 5);
+
+    // Phát âm báo thành công
+    playSuccessChime(false);
 
     // Lưu điểm danh tức thì không cần thêm bất kỳ thao tác nào
     onUpdateAttendance(
@@ -211,7 +248,7 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
     );
 
     setQuickScanToast({
-      text: `✓ ĐÃ ĐIỂM DANH XONG CHO: ${student.holyName} ${student.fullName} (${student.id}) • Đạt (Loại A)`,
+      text: `✓ ĐÃ ĐIỂM DANH THÀNH CÔNG: ${student.holyName} ${student.fullName} (${student.id}) • Đạt (Loại A)`,
       isSuccess: true
     });
     setQuickScanCode('');
@@ -361,6 +398,20 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
                 <span>Điểm danh cả lớp Đạt (A)</span>
               </button>
             )}
+
+            <button
+              type="button"
+              id="open-attendance-history-btn"
+              onClick={() => {
+                setHistoryModalStudentId(undefined);
+                setIsHistoryModalOpen(true);
+              }}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              title="Xem lịch sử điểm danh chi tiết theo lớp hoặc theo từng cá nhân học sinh"
+            >
+              <History className="w-3.5 h-3.5 text-sky-200" />
+              <span>Xem Lịch Sử Điểm Danh</span>
+            </button>
 
             <button
               onClick={() => window.print()}
@@ -600,10 +651,13 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
 
       {/* Main Attendance Matrix */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+        <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-bold text-slate-800 text-xs uppercase tracking-wider">
-              Bảng Ghi Điểm Chuyên Cần — {selectedClass?.name} (HK {selectedSemester})
+              {attendanceViewMode === 'day_focus' ? 'Chế Độ Điểm Danh Theo Ngày' : 'Bảng Ma Trận Chuyên Cần'}
+            </span>
+            <span className="text-xs text-slate-500">
+              • Lớp <strong className="text-slate-800">{selectedClass?.name}</strong> (Học Kỳ {selectedSemester})
             </span>
             {selectedClass?.isSacramentClass && (
               <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
@@ -612,8 +666,39 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
             )}
           </div>
           
-          <div className="flex items-center gap-3">
-            <div className="relative">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* View Mode Toggle: Day Focus vs Matrix */}
+            <div className="inline-flex items-center bg-slate-200/80 p-0.5 rounded-xl border border-slate-300/80 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setAttendanceViewMode('day_focus')}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  attendanceViewMode === 'day_focus'
+                    ? 'bg-white text-emerald-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Chế độ điểm danh nhanh 1 chạm theo ngày, cực kỳ dễ dùng trên điện thoại"
+              >
+                <LayoutGrid className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Theo Ngày (Điện thoại)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAttendanceViewMode('matrix')}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  attendanceViewMode === 'matrix'
+                    ? 'bg-white text-slate-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Xem toàn bộ ma trận các ngày trong học kỳ trên màn hình máy tính"
+              >
+                <List className="w-3.5 h-3.5 text-slate-600" />
+                <span>Ma Trận (Máy tính)</span>
+              </button>
+            </div>
+
+            <div className="relative min-w-[150px]">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -639,7 +724,298 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* DAY FOCUS VIEW (Mobile-First 1-Touch Attendance) vs MATRIX SPREADSHEET */}
+        {attendanceViewMode === 'day_focus' ? (
+          <div className="p-3 sm:p-4 space-y-3 bg-slate-50/50">
+            {/* Active Date Bar & Day navigation */}
+            <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center font-bold text-xs shrink-0">
+                  <Calendar className="w-4 h-4 text-amber-700" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                    <span>Điểm danh ngày:</span>
+                    <span className="font-mono text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      {new Date(activeDate).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                    </span>
+                    <span className="text-[11px] font-semibold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      {activeSessionType}
+                    </span>
+                  </div>
+                  {!activeDatePermission.canEdit && (
+                    <div className="text-[11px] text-rose-600 flex items-center gap-1 mt-0.5">
+                      <Lock className="w-3 h-3 shrink-0" />
+                      <span>{activeDatePermission.reason}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Jump buttons */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    setActiveDate(todayStr);
+                  }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-colors cursor-pointer"
+                >
+                  Hôm nay
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Filter by Status */}
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-[11px] font-semibold text-slate-400">Lọc trạng thái ngày này:</span>
+              {(['all', 'unrecorded', 'A', 'B', 'C', 'D'] as const).map(statusKey => {
+                const count = classStudents.filter(st => {
+                  const rec = getRecordForStudentAndDate(st.id, activeDate);
+                  if (statusKey === 'all') return true;
+                  if (statusKey === 'unrecorded') return !rec?.status;
+                  return rec?.status === statusKey;
+                }).length;
+
+                const labels: Record<string, string> = {
+                  all: `Tất cả (${classStudents.length})`,
+                  unrecorded: `Chưa điểm (${count})`,
+                  A: `Đạt A (${count})`,
+                  B: `Trễ B (${count})`,
+                  C: `Phép C (${count})`,
+                  D: `Vắng D (${count})`,
+                };
+
+                const isSelected = statusFilter === statusKey;
+
+                return (
+                  <button
+                    key={statusKey}
+                    type="button"
+                    onClick={() => setStatusFilter(statusKey)}
+                    className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-amber-600 text-white shadow-2xs'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {labels[statusKey]}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Students List in Day Focus Mode */}
+            <div className="space-y-2.5">
+              {classStudents
+                .filter(st => {
+                  const rec = getRecordForStudentAndDate(st.id, activeDate);
+                  if (statusFilter === 'all') return true;
+                  if (statusFilter === 'unrecorded') return !rec?.status;
+                  return rec?.status === statusFilter;
+                })
+                .map((st, idx) => {
+                  const record = getRecordForStudentAndDate(st.id, activeDate);
+                  const currentStatus = record?.status;
+
+                  // Overall semester attendance score
+                  const stRecords = attendanceRecords.filter(
+                    r => r.studentId === st.id && r.semester === selectedSemester
+                  );
+                  const statuses = stRecords.map(r => r.status);
+                  const { score, isDisqualifiedDueToD } = calculateSemesterAttendanceScore(
+                    statuses,
+                    selectedClass?.isSacramentClass || false
+                  );
+
+                  return (
+                    <div
+                      key={st.id}
+                      className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-3.5 shadow-2xs hover:border-amber-300 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3"
+                    >
+                      {/* Student information */}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 font-bold text-slate-700 flex items-center justify-center text-xs shrink-0 font-mono">
+                          {idx + 1}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 text-sm truncate flex items-center gap-1.5">
+                            <span className="text-amber-800">{st.holyName}</span>
+                            <span className="truncate">{st.fullName}</span>
+                            {isDisqualifiedDueToD && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-100 text-rose-900 text-[10px] font-bold border border-rose-300 shrink-0">
+                                <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                Nguy cơ hỏng CC
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                            <span className="font-mono text-slate-600 font-semibold">{st.id}</span>
+                            <span>•</span>
+                            <span>Điểm CC kỳ: <strong className="text-emerald-700 font-mono">{score.toFixed(1)}/10</strong></span>
+                            {record?.isManualEntry && (
+                              <span className="text-[10px] text-slate-400 italic">(Nhập tay)</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 4 Large Touch Buttons (A, B, C, D) + Note Button */}
+                      <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
+                        {/* Status A: Đạt */}
+                        <button
+                          type="button"
+                          disabled={!activeDatePermission.canEdit}
+                          onClick={() => {
+                            onUpdateAttendance(
+                              st.id,
+                              'A',
+                              activeDate,
+                              activeSessionType,
+                              selectedSemester,
+                              undefined,
+                              undefined,
+                              'Điểm danh đạt (A)',
+                              true
+                            );
+                          }}
+                          className={`flex-1 sm:flex-none min-w-[64px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer disabled:opacity-50 ${
+                            currentStatus === 'A'
+                              ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400'
+                              : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+                          }`}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>A: Đạt</span>
+                        </button>
+
+                        {/* Status B: Trễ */}
+                        <button
+                          type="button"
+                          disabled={!activeDatePermission.canEdit}
+                          onClick={() => {
+                            onUpdateAttendance(
+                              st.id,
+                              'B',
+                              activeDate,
+                              activeSessionType,
+                              selectedSemester,
+                              undefined,
+                              undefined,
+                              'Điểm danh trễ (B)',
+                              true
+                            );
+                          }}
+                          className={`flex-1 sm:flex-none min-w-[64px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer disabled:opacity-50 ${
+                            currentStatus === 'B'
+                              ? 'bg-amber-500 text-slate-950 shadow-xs ring-2 ring-amber-300'
+                              : 'bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100'
+                          }`}
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>B: Trễ</span>
+                        </button>
+
+                        {/* Status C: Có phép */}
+                        <button
+                          type="button"
+                          disabled={!activeDatePermission.canEdit}
+                          onClick={() => {
+                            onUpdateAttendance(
+                              st.id,
+                              'C',
+                              activeDate,
+                              activeSessionType,
+                              selectedSemester,
+                              undefined,
+                              undefined,
+                              'Vắng có phép (C)',
+                              true
+                            );
+                          }}
+                          className={`flex-1 sm:flex-none min-w-[64px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer disabled:opacity-50 ${
+                            currentStatus === 'C'
+                              ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-400'
+                              : 'bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100'
+                          }`}
+                        >
+                          <FileEdit className="w-3.5 h-3.5" />
+                          <span>C: Phép</span>
+                        </button>
+
+                        {/* Status D: Vắng không phép */}
+                        <button
+                          type="button"
+                          disabled={!activeDatePermission.canEdit}
+                          onClick={() => {
+                            onUpdateAttendance(
+                              st.id,
+                              'D',
+                              activeDate,
+                              activeSessionType,
+                              selectedSemester,
+                              undefined,
+                              undefined,
+                              'Vắng không phép (D)',
+                              true
+                            );
+                          }}
+                          className={`flex-1 sm:flex-none min-w-[64px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer disabled:opacity-50 ${
+                            currentStatus === 'D'
+                              ? 'bg-rose-600 text-white shadow-xs ring-2 ring-rose-400'
+                              : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
+                          }`}
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>D: Vắng</span>
+                        </button>
+
+                        {/* Detailed Absence modal button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAbsenceModalStudent(st);
+                            setAbsenceStatus('C');
+                            setAbsenceReason('');
+                          }}
+                          className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors cursor-pointer"
+                          title="Ghi lý do vắng / Đính kèm ghi chú"
+                        >
+                          <UserX className="w-4 h-4 text-slate-500" />
+                        </button>
+
+                        {/* View Individual History Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHistoryModalStudentId(st.id);
+                            setIsHistoryModalOpen(true);
+                          }}
+                          className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl transition-colors cursor-pointer border border-blue-200/60"
+                          title={`Xem toàn bộ lịch sử điểm danh của ${st.holyName} ${st.fullName}`}
+                        >
+                          <History className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {classStudents.filter(st => {
+                const rec = getRecordForStudentAndDate(st.id, activeDate);
+                if (statusFilter === 'all') return true;
+                if (statusFilter === 'unrecorded') return !rec?.status;
+                return rec?.status === statusFilter;
+              }).length === 0 && (
+                <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center text-slate-400">
+                  Không có học sinh nào phù hợp với bộ lọc trạng thái.
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-300 text-[11px]">
               <tr>
@@ -818,6 +1194,7 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
             </tbody>
           </table>
         </div>
+      )}
       </div>
 
       {/* Quick Absence Recording Modal */}
@@ -908,6 +1285,21 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Attendance History Modal */}
+      {isHistoryModalOpen && (
+        <AttendanceHistoryModal
+          students={students}
+          classes={classes}
+          attendanceRecords={attendanceRecords}
+          initialClassId={selectedClassId}
+          initialStudentId={historyModalStudentId}
+          onClose={() => {
+            setIsHistoryModalOpen(false);
+            setHistoryModalStudentId(undefined);
+          }}
+        />
       )}
     </div>
   );

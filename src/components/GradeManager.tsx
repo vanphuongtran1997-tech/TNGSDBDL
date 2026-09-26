@@ -11,7 +11,11 @@ import {
   ShieldAlert,
   ChevronDown,
   FileSpreadsheet,
-  Lock
+  Lock,
+  LayoutGrid,
+  List,
+  Search,
+  Check
 } from 'lucide-react';
 import { 
   Student, 
@@ -64,6 +68,9 @@ export const GradeManager: React.FC<GradeManagerProps> = ({
   const [localScores, setLocalScores] = useState<Record<string, { mid: string; final: string; retest: string }>>({});
   const [activeViolationModalStudent, setActiveViolationModalStudent] = useState<Student | null>(null);
   const [isExcelExportOpen, setIsExcelExportOpen] = useState(false);
+  const [gradeViewMode, setGradeViewMode] = useState<'card' | 'table'>(() => typeof window !== 'undefined' && window.innerWidth < 768 ? 'card' : 'table');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [savedToastId, setSavedToastId] = useState<string | null>(null);
 
   useEffect(() => {
     if (classes.length > 0 && (!selectedClassId || !classes.some(c => c.id === selectedClassId))) {
@@ -264,19 +271,334 @@ export const GradeManager: React.FC<GradeManagerProps> = ({
         </div>
       </div>
 
-      {/* Main Grade Table */}
+      {/* Main Grade Table / Cards */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-          <div className="font-bold text-slate-800 text-xs uppercase tracking-wider">
-            {selectedSemester === 'yearly' 
-              ? `Bảng Tổng Kết Học Lực & Hạnh Kiểm Cả Năm 2026 - 2027 — ${selectedClass?.name}`
-              : `Bảng Nhập Điểm Học Kỳ ${selectedSemester} — ${selectedClass?.name}`}
+        <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+              {selectedSemester === 'yearly' 
+                ? `Bảng Tổng Kết Học Lực & Hạnh Kiểm Cả Năm — ${selectedClass?.name}`
+                : `Sổ Điểm Học Kỳ ${selectedSemester} — ${selectedClass?.name}`}
+            </div>
+            <span className="text-[11px] text-slate-500">
+              {canEdit ? 'Nhập điểm trực tiếp vào ô rồi bấm Lưu' : 'Chế độ xem bảng điểm'}
+            </span>
           </div>
-          <span className="text-xs text-slate-500">
-            {canEdit ? 'Nhập điểm trực tiếp vào ô rồi bấm Lưu hoặc Enter' : 'Chế độ xem bảng điểm'}
-          </span>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* View Mode Toggle: Card vs Table */}
+            <div className="inline-flex items-center bg-slate-200/80 p-0.5 rounded-xl border border-slate-300/80 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setGradeViewMode('card')}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  gradeViewMode === 'card'
+                    ? 'bg-white text-amber-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Dạng thẻ điểm trực quan, tối ưu cho màn hình điện thoại"
+              >
+                <LayoutGrid className="w-3.5 h-3.5 text-amber-700" />
+                <span>Dạng Thẻ (Điện thoại)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setGradeViewMode('table')}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  gradeViewMode === 'table'
+                    ? 'bg-white text-slate-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Dạng bảng tính đầy đủ, tối ưu cho máy tính"
+              >
+                <List className="w-3.5 h-3.5 text-slate-600" />
+                <span>Dạng Bảng (Máy tính)</span>
+              </button>
+            </div>
+
+            {/* Quick search input */}
+            <div className="relative min-w-[150px]">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Tìm tên / mã..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-7 pr-6 py-1 text-xs border border-slate-300 rounded-md bg-white w-40 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
+        {/* RENDER GRADE VIEW: CARDS (Mobile-First) vs SPREADSHEET TABLE */}
+        {gradeViewMode === 'card' ? (
+          <div className="p-3 sm:p-4 space-y-3 bg-slate-50/50">
+            {classStudents.filter(s => {
+              if (!searchQuery.trim()) return true;
+              const q = searchQuery.toLowerCase();
+              return s.fullName.toLowerCase().includes(q) || s.holyName.toLowerCase().includes(q) || s.id.toLowerCase().includes(q);
+            }).length === 0 ? (
+              <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center text-slate-400">
+                Không tìm thấy học sinh nào trong lớp phù hợp với từ khóa tìm kiếm.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {classStudents
+                  .filter(s => {
+                    if (!searchQuery.trim()) return true;
+                    const q = searchQuery.toLowerCase();
+                    return s.fullName.toLowerCase().includes(q) || s.holyName.toLowerCase().includes(q) || s.id.toLowerCase().includes(q);
+                  })
+                  .map((st, idx) => {
+                    const gr1 = getGradeRecord(st.id, 1);
+                    const gr2 = getGradeRecord(st.id, 2);
+
+                    const hk1Avg = calculateSemesterAcademicAverage(gr1?.midTermScore ?? null, gr1?.finalExamScore ?? null, gr1?.retestScore);
+                    const hk2Avg = calculateSemesterAcademicAverage(gr2?.midTermScore ?? null, gr2?.finalExamScore ?? null, gr2?.retestScore);
+                    const yearlyAcademic = calculateYearlyAcademicAverage(hk1Avg, hk2Avg);
+
+                    const currentSemRecord = selectedSemester !== 'yearly' ? getGradeRecord(st.id, selectedSemester) : undefined;
+                    const currentSemAvg = selectedSemester === 1 ? hk1Avg : hk2Avg;
+
+                    // Conduct
+                    const semViolations = conducts.filter(c => c.studentId === st.id && (selectedSemester === 'yearly' ? true : c.semester === selectedSemester));
+                    const hk1Violations = conducts.filter(c => c.studentId === st.id && c.semester === 1);
+                    const hk2Violations = conducts.filter(c => c.studentId === st.id && c.semester === 2);
+                    const hk1Conduct = calculateSemesterConductScore(hk1Violations.map(v => v.violation));
+                    const hk2Conduct = calculateSemesterConductScore(hk2Violations.map(v => v.violation));
+                    const yearlyConduct = calculateYearlyAverageHalf(hk1Conduct, hk2Conduct);
+
+                    // Attendance
+                    const isSacrament = selectedClass?.isSacramentClass || false;
+                    const hk1Att = attendanceRecords.filter(r => r.studentId === st.id && r.semester === 1);
+                    const hk2Att = attendanceRecords.filter(r => r.studentId === st.id && r.semester === 2);
+                    const { score: hk1AttScore, counts: c1 } = calculateSemesterAttendanceScore(hk1Att.map(r => r.status), isSacrament);
+                    const { score: hk2AttScore, counts: c2 } = calculateSemesterAttendanceScore(hk2Att.map(r => r.status), isSacrament);
+                    const currentAttScore = selectedSemester === 1 ? hk1AttScore : hk2AttScore;
+                    const yearlyAttendance = calculateYearlyAverageHalf(hk1AttScore, hk2AttScore);
+                    const yearlyConductAndAttendance = calculateYearlyAverageHalf(yearlyAttendance, yearlyConduct);
+
+                    // Final evaluations
+                    const totalUnexcused = c1.D + c2.D;
+                    const specialPromo = specialPromotions.find(sp => sp.studentId === st.id);
+                    const { academicRank, finalResult, atRiskReason } = evaluatePromotionAndRank(
+                      yearlyAcademic,
+                      yearlyConductAndAttendance,
+                      totalUnexcused,
+                      isSacrament,
+                      specialPromo
+                    );
+
+                    const midVal = localScores[st.id]?.mid !== undefined 
+                      ? localScores[st.id].mid 
+                      : (currentSemRecord?.midTermScore !== null && currentSemRecord?.midTermScore !== undefined ? String(currentSemRecord.midTermScore) : '');
+                    const finalVal = localScores[st.id]?.final !== undefined 
+                      ? localScores[st.id].final 
+                      : (currentSemRecord?.finalExamScore !== null && currentSemRecord?.finalExamScore !== undefined ? String(currentSemRecord.finalExamScore) : '');
+                    const retestVal = localScores[st.id]?.retest !== undefined 
+                      ? localScores[st.id].retest 
+                      : (currentSemRecord?.retestScore !== null && currentSemRecord?.retestScore !== undefined ? String(currentSemRecord.retestScore) : '');
+
+                    const isSavedRecently = savedToastId === st.id;
+
+                    return (
+                      <div
+                        key={st.id}
+                        className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs hover:border-amber-300 transition-all flex flex-col justify-between"
+                      >
+                        {/* Student Header */}
+                        <div>
+                          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-900 font-bold text-xs flex items-center justify-center shrink-0">
+                                {idx + 1}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="font-bold text-slate-900 text-xs sm:text-sm truncate">
+                                  <span className="text-amber-800 mr-1">{st.holyName}</span>
+                                  <span>{st.fullName}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-mono">{st.id}</div>
+                              </div>
+                            </div>
+
+                            {selectedSemester !== 'yearly' ? (
+                              <div className="text-right shrink-0">
+                                <span className="text-[10px] text-slate-400 block">ĐTB HK{selectedSemester}:</span>
+                                <span className="text-xs font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                  {currentSemAvg !== null ? currentSemAvg.toFixed(2) : '--'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="text-right shrink-0">
+                                <span className="text-[10px] text-slate-400 block">ĐTB Cả Năm:</span>
+                                <span className="text-xs font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 font-mono">
+                                  {yearlyAcademic.toFixed(2)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Inputs or Yearly Summary */}
+                          {selectedSemester !== 'yearly' ? (
+                            <div className="mt-3 space-y-3">
+                              {/* 3 numeric score inputs (with inputMode="decimal" for smartphones) */}
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 text-center">
+                                  <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                                    KT 45P (HS 1)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    min="0"
+                                    max="10"
+                                    inputMode="decimal"
+                                    disabled={!canEdit}
+                                    placeholder="--"
+                                    value={midVal}
+                                    onChange={(e) => handleScoreChange(st.id, 'mid', e.target.value)}
+                                    className="w-full text-center font-bold text-xs py-1.5 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                                  />
+                                </div>
+
+                                <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 text-center">
+                                  <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                                    Thi HK (HS 2)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    min="0"
+                                    max="10"
+                                    inputMode="decimal"
+                                    disabled={!canEdit}
+                                    placeholder="--"
+                                    value={finalVal}
+                                    onChange={(e) => handleScoreChange(st.id, 'final', e.target.value)}
+                                    className="w-full text-center font-bold text-xs py-1.5 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                                  />
+                                </div>
+
+                                <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 text-center">
+                                  <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                                    Thi Lại (≤8)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    min="0"
+                                    max="8"
+                                    inputMode="decimal"
+                                    disabled={!canEdit}
+                                    placeholder="--"
+                                    value={retestVal}
+                                    onChange={(e) => handleScoreChange(st.id, 'retest', e.target.value)}
+                                    className="w-full text-center font-bold text-xs py-1.5 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Conduct & Attendance sub-bar */}
+                              <div className="flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded-xl border border-slate-200">
+                                <div>
+                                  <span className="text-slate-400">Điểm Chuyên Cần:</span>{' '}
+                                  <strong className="text-emerald-700">{currentAttScore.toFixed(1)}/10</strong>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveViolationModalStudent(st)}
+                                  className="text-[11px] text-amber-800 hover:text-amber-900 font-semibold underline flex items-center gap-1 cursor-pointer"
+                                >
+                                  <span>Hạnh Kiểm ({semViolations.length} vi phạm)</span>
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            /* Yearly Summary Cards */
+                            <div className="mt-3 space-y-2.5">
+                              <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
+                                <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-200">
+                                  <span className="text-[10px] text-slate-400 block">HK1</span>
+                                  <span className="font-bold text-slate-800">{hk1Avg !== null ? hk1Avg.toFixed(1) : '--'}</span>
+                                </div>
+                                <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-200">
+                                  <span className="text-[10px] text-slate-400 block">HK2</span>
+                                  <span className="font-bold text-slate-800">{hk2Avg !== null ? hk2Avg.toFixed(1) : '--'}</span>
+                                </div>
+                                <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-200">
+                                  <span className="text-[10px] text-slate-400 block">CC Năm</span>
+                                  <span className="font-bold text-slate-800">{yearlyAttendance.toFixed(1)}</span>
+                                </div>
+                                <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-200">
+                                  <span className="text-[10px] text-slate-400 block">HK Năm</span>
+                                  <span className="font-bold text-slate-800">{yearlyConduct.toFixed(1)}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between gap-2 pt-1">
+                                <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
+                                  academicRank === 'GIỎI' ? 'bg-amber-100 text-amber-900 border border-amber-300' :
+                                  academicRank === 'KHÁ' ? 'bg-blue-100 text-blue-900 border border-blue-300' :
+                                  academicRank === 'TRUNG BÌNH' ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' :
+                                  'bg-red-100 text-red-900 border border-red-300'
+                                }`}>
+                                  Xếp Loại: {academicRank}
+                                </span>
+
+                                <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${
+                                  finalResult === 'Được lên lớp' 
+                                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-300' 
+                                    : 'bg-amber-50 text-amber-800 border border-amber-300'
+                                }`}>
+                                  {finalResult}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Card Bottom Save Button (HK1/HK2 only) */}
+                        {selectedSemester !== 'yearly' && canEdit && (
+                          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                            {isSavedRecently && (
+                              <span className="text-emerald-700 text-xs font-bold flex items-center gap-1 animate-in fade-in">
+                                <Check className="w-3.5 h-3.5" />
+                                Đã lưu!
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                saveStudentScore(st.id, selectedSemester as 1 | 2);
+                                setSavedToastId(st.id);
+                                setTimeout(() => setSavedToastId(null), 2000);
+                              }}
+                              className="ml-auto py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              <span>Lưu Điểm Em Này</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-300 text-[11px]">
@@ -569,6 +891,7 @@ export const GradeManager: React.FC<GradeManagerProps> = ({
             </tbody>
           </table>
         </div>
+      )}
       </div>
 
       {/* Conduct Violation Modal */}

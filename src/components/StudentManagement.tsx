@@ -24,7 +24,9 @@ import {
   FileSpreadsheet,
   Crown,
   ShieldCheck,
-  Lock
+  Lock,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 import { Student, ClassRoom, Role, SpecialPromotion, GradeRecord, ConductRecord, AttendanceRecord, UserAccount } from '../types';
 import { 
@@ -110,6 +112,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   }, [isParishWide, classes, selectedClassId]);
 
   const [selectedGender, setSelectedGender] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'card' | 'table'>(() => typeof window !== 'undefined' && window.innerWidth < 768 ? 'card' : 'table');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
 
@@ -586,214 +589,442 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         )}
       </div>
 
-      {/* Student List Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-700">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[11px] font-semibold">
-              <tr>
-                <th className="py-3 px-3 w-10 text-center">
-                  <input
-                    type="checkbox"
-                    checked={filteredStudents.length > 0 && selectedStudentIds.length === filteredStudents.length}
-                    onChange={toggleSelectAll}
-                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer w-3.5 h-3.5"
-                    title="Chọn tất cả danh sách đang hiển thị"
-                  />
-                </th>
-                <th className="py-3 px-3">Mã Số</th>
-                <th className="py-3 px-3">Tên Thánh & Họ Tên</th>
-                <th className="py-3 px-3">Lớp Hiện Tại</th>
-                <th className="py-3 px-3">Ngày Sinh / Giới Tính</th>
-                <th className="py-3 px-3">Giáo Họ / Khu Xóm</th>
-                <th className="py-3 px-3">Phụ Huynh & SĐT</th>
-                <th className="py-3 px-3">Bí Tích Lãnh Nhận</th>
-                <th className="py-3 px-3 text-right">Thao Tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredStudents.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="text-center py-12 text-slate-400">
-                    Không tìm thấy học sinh nào phù hợp với bộ lọc.
-                  </td>
-                </tr>
-              ) : (
-                filteredStudents.map((st) => (
-                  <tr 
-                    key={st.id} 
-                    className={`transition-colors ${
-                      selectedStudentIds.includes(st.id) ? 'bg-amber-50/70' : 'hover:bg-amber-50/30'
-                    }`}
-                  >
-                    <td className="py-2.5 px-3 w-10 text-center">
-                      <input
-                        type="checkbox"
-                        checked={selectedStudentIds.includes(st.id)}
-                        onChange={() => toggleSelectStudent(st.id)}
-                        className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer w-3.5 h-3.5"
-                      />
-                    </td>
-                    <td className="py-2.5 px-3 font-mono font-medium text-slate-900">
-                      {st.id}
-                    </td>
+      {/* View Mode & Selection Summary Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 px-1">
+        <div className="flex items-center gap-2">
+          <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 font-semibold cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filteredStudents.length > 0 && selectedStudentIds.length === filteredStudents.length}
+              onChange={toggleSelectAll}
+              className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer w-4 h-4"
+            />
+            <span>Chọn tất cả ({filteredStudents.length} em)</span>
+          </label>
+        </div>
 
-                    <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 border border-amber-200">
-                          {st.holyName.charAt(0)}
-                        </div>
-                        <div>
-                          <div className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
-                            <span>{st.holyName} {st.fullName}</span>
-                            {specialPromotions.some(sp => sp.studentId === st.id) && (
-                              <span 
-                                className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 text-[10px] font-bold border border-purple-300"
-                                title="Học sinh được Cha Quản Sở & Quản Trị Viên đặc cách lên thẳng lớp trên"
-                              >
-                                <Crown className="w-3 h-3 text-amber-500" />
-                                Đặc cách
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[10px] text-slate-500">{st.address}</div>
-                        </div>
-                      </div>
-                    </td>
+        {/* View Mode Switcher (Card vs Table) */}
+        <div className="inline-flex items-center bg-slate-200/80 p-0.5 rounded-xl border border-slate-300/80 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setViewMode('card')}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              viewMode === 'card'
+                ? 'bg-white text-amber-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+            title="Dạng thẻ trực quan, tối ưu cho màn hình điện thoại"
+          >
+            <LayoutGrid className="w-3.5 h-3.5 text-amber-700" />
+            <span>Dạng Thẻ (Điện thoại)</span>
+          </button>
 
-                    <td className="py-2.5 px-3">
-                      <span className="font-semibold text-blue-900 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-[11px]">
-                        {getClassName(st.classId)}
-                      </span>
-                    </td>
-
-                    <td className="py-2.5 px-3 whitespace-nowrap">
-                      <div>{new Date(st.dob).toLocaleDateString('vi-VN')}</div>
-                      <span className={`text-[10px] font-medium ${st.gender === 'Nam' ? 'text-blue-600' : 'text-pink-600'}`}>
-                        {st.gender}
-                      </span>
-                    </td>
-
-                    <td className="py-2.5 px-3">
-                      <span className="text-slate-700 font-medium">{st.subParish}</span>
-                    </td>
-
-                    <td className="py-2.5 px-3">
-                      <div className="font-medium text-slate-800">{st.parentName}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">{st.parentPhone}</div>
-                    </td>
-
-                    <td className="py-2.5 px-3 whitespace-nowrap">
-                      <div className="flex flex-wrap gap-1">
-                        <span 
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                            st.baptismDate 
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                              : 'bg-slate-100 text-slate-400'
-                          }`}
-                          title={st.baptismDate ? `Rửa tội: ${st.baptismDate}` : 'Chưa cập nhật'}
-                        >
-                          Rửa Tội
-                        </span>
-                        <span 
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                            st.firstCommunionDate 
-                              ? 'bg-blue-50 text-blue-700 border border-blue-200' 
-                              : 'bg-slate-100 text-slate-400'
-                          }`}
-                          title={st.firstCommunionDate ? `Rước lễ: ${st.firstCommunionDate}` : 'Chưa lãnh nhận'}
-                        >
-                          Rước Lễ
-                        </span>
-                        <span 
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                            st.confirmationDate 
-                              ? 'bg-amber-50 text-amber-700 border border-amber-200' 
-                              : 'bg-slate-100 text-slate-400'
-                          }`}
-                          title={st.confirmationDate ? `Thêm sức: ${st.confirmationDate}` : 'Chưa lãnh nhận'}
-                        >
-                          Thêm Sức
-                        </span>
-                      </div>
-                    </td>
-
-                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                      <div className="inline-flex items-center gap-1">
-                        {/* Open Report Book */}
-                        <button
-                          onClick={() => onOpenReportBook(st)}
-                          className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
-                          title="Xem Sổ Liên Lạc"
-                        >
-                          <BookOpen className="w-4 h-4" />
-                        </button>
-
-                        {/* Print Single Student ATM Card & QR */}
-                        <button
-                          onClick={() => onOpenCardModal(st.classId, [st.id])}
-                          className="p-1.5 text-blue-700 hover:text-blue-900 hover:bg-blue-50 rounded"
-                          title="In Thẻ ATM & QR cho em này"
-                        >
-                          <Printer className="w-4 h-4" />
-                        </button>
-
-                        {/* Special Promotion for Admin or Pastor */}
-                        {canSpecial && onOpenSpecialPromotion && (
-                          <button
-                            onClick={() => onOpenSpecialPromotion(st)}
-                            className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded cursor-pointer"
-                            title="Xét đặc cách lên thẳng lớp trên"
-                          >
-                            <Crown className="w-4 h-4" />
-                          </button>
-                        )}
-
-                        {/* Transfer single student (Admin, Pastor, Catechist Leader) */}
-                        {canTransfer && (
-                          <button
-                            onClick={() => onOpenTransferModal(st)}
-                            className="p-1.5 text-slate-600 hover:text-amber-700 hover:bg-amber-50 rounded cursor-pointer"
-                            title="Chuyển lớp cho học sinh này"
-                          >
-                            <ArrowRightLeft className="w-4 h-4" />
-                          </button>
-                        )}
-
-                        {/* Edit */}
-                        {canEdit && (
-                          <button
-                            onClick={() => openEditModal(st)}
-                            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded cursor-pointer"
-                            title="Chỉnh sửa hồ sơ"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                        )}
-
-                        {/* Delete (Admin and Pastor only) */}
-                        {canDelete && (
-                          <button
-                            onClick={() => {
-                              if (confirm(`Bạn có chắc chắn muốn xóa học sinh ${st.holyName} ${st.fullName}?`)) {
-                                onDeleteStudent(st.id);
-                              }
-                            }}
-                            className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded cursor-pointer"
-                            title="Xóa hồ sơ"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          <button
+            type="button"
+            onClick={() => setViewMode('table')}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              viewMode === 'table'
+                ? 'bg-white text-slate-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+            title="Dạng bảng đầy đủ, tối ưu cho máy tính"
+          >
+            <List className="w-3.5 h-3.5 text-slate-600" />
+            <span>Dạng Bảng (Máy tính)</span>
+          </button>
         </div>
       </div>
+
+      {/* RENDER VIEW MODE: CARD VIEW (Mobile-First) */}
+      {viewMode === 'card' ? (
+        <div className="space-y-3">
+          {filteredStudents.length === 0 ? (
+            <div className="bg-white rounded-2xl p-10 border border-slate-200 text-center text-slate-400">
+              Không tìm thấy học sinh nào phù hợp với bộ lọc.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {filteredStudents.map((st) => {
+                const isSelected = selectedStudentIds.includes(st.id);
+                const hasPromo = specialPromotions.some(sp => sp.studentId === st.id);
+                const classNameStr = getClassName(st.classId);
+
+                return (
+                  <div
+                    key={st.id}
+                    className={`bg-white rounded-2xl border transition-all p-3.5 flex flex-col justify-between shadow-2xs ${
+                      isSelected
+                        ? 'border-amber-400 bg-amber-50/40 ring-2 ring-amber-300'
+                        : 'border-slate-200 hover:border-amber-300'
+                    }`}
+                  >
+                    {/* Top card row: Select, Avatar, Name & Class */}
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectStudent(st.id)}
+                            className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer w-4 h-4 shrink-0"
+                          />
+                          <div className="w-9 h-9 rounded-full bg-amber-100 text-amber-900 font-bold flex items-center justify-center text-sm shrink-0 border border-amber-300">
+                            {st.holyName.charAt(0)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 text-sm truncate flex items-center gap-1">
+                              <span className="text-amber-800">{st.holyName}</span>
+                              <span className="truncate">{st.fullName}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="font-mono text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                {st.id}
+                              </span>
+                              <span className="text-[10px] text-blue-900 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-semibold truncate">
+                                {classNameStr}
+                              </span>
+                              <span className={`text-[10px] font-semibold ${st.gender === 'Nam' ? 'text-blue-600' : 'text-pink-600'}`}>
+                                • {st.gender}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {hasPromo && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-purple-100 text-purple-900 text-[10px] font-bold border border-purple-300 shrink-0">
+                            <Crown className="w-3 h-3 text-amber-500" />
+                            Đặc cách
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Details row: Sub-parish, Birthday, Parents */}
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Giáo họ / Khu xóm:</span>
+                          <span className="font-medium text-slate-800 truncate block">{st.subParish}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Ngày sinh:</span>
+                          <span className="font-medium text-slate-800 block">
+                            {new Date(st.dob).toLocaleDateString('vi-VN')}
+                          </span>
+                        </div>
+
+                        <div className="col-span-2 bg-slate-50 p-2 rounded-xl border border-slate-200/80 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-[10px] text-slate-400 block">Phụ huynh:</span>
+                            <span className="font-semibold text-slate-800 text-xs truncate block">
+                              {st.parentName || 'Chưa cập nhật'}
+                            </span>
+                          </div>
+
+                          {st.parentPhone && (
+                            <a
+                              href={`tel:${st.parentPhone.replace(/\s+/g, '')}`}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors shrink-0"
+                              title={`Gọi điện cho phụ huynh: ${st.parentPhone}`}
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                              <span>Gọi PH</span>
+                            </a>
+                          )}
+                        </div>
+
+                        {/* Sacraments badges */}
+                        <div className="col-span-2 flex items-center gap-1.5 pt-1">
+                          <span className="text-[10px] text-slate-400">Bí tích:</span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            st.baptismDate ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-400'
+                          }`}>
+                            Rửa Tội
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            st.firstCommunionDate ? 'bg-blue-50 text-blue-800 border border-blue-200' : 'bg-slate-100 text-slate-400'
+                          }`}>
+                            Rước Lễ
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            st.confirmationDate ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-slate-100 text-slate-400'
+                          }`}>
+                            Thêm Sức
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Bar on Card (Touch-friendly minimum 38px height) */}
+                    <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onOpenReportBook(st)}
+                        className="flex-1 py-1.5 px-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                        title="Xem Sổ Liên Lạc"
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Sổ Liên Lạc</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onOpenCardModal(st.classId, [st.id])}
+                        className="py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                        title="In thẻ ATM & QR"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-slate-600" />
+                        <span className="hidden sm:inline">Thẻ & QR</span>
+                      </button>
+
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(st)}
+                          className="py-1.5 px-2.5 bg-slate-100 hover:bg-amber-100 hover:text-amber-900 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Sửa hồ sơ"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          <span>Sửa</span>
+                        </button>
+                      )}
+
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Bạn có chắc chắn muốn xóa học sinh ${st.holyName} ${st.fullName}?`)) {
+                              onDeleteStudent(st.id);
+                            }
+                          }}
+                          className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-semibold flex items-center transition-colors cursor-pointer"
+                          title="Xóa hồ sơ"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* RENDER VIEW MODE: TABLE VIEW (Desktop-First) */
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-700">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[11px] font-semibold">
+                <tr>
+                  <th className="py-3 px-3 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={filteredStudents.length > 0 && selectedStudentIds.length === filteredStudents.length}
+                      onChange={toggleSelectAll}
+                      className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer w-3.5 h-3.5"
+                      title="Chọn tất cả danh sách đang hiển thị"
+                    />
+                  </th>
+                  <th className="py-3 px-3">Mã Số</th>
+                  <th className="py-3 px-3">Tên Thánh & Họ Tên</th>
+                  <th className="py-3 px-3">Lớp Hiện Tại</th>
+                  <th className="py-3 px-3">Ngày Sinh / Giới Tính</th>
+                  <th className="py-3 px-3">Giáo Họ / Khu Xóm</th>
+                  <th className="py-3 px-3">Phụ Huynh & SĐT</th>
+                  <th className="py-3 px-3">Bí Tích Lãnh Nhận</th>
+                  <th className="py-3 px-3 text-right">Thao Tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="text-center py-12 text-slate-400">
+                      Không tìm thấy học sinh nào phù hợp với bộ lọc.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStudents.map((st) => (
+                    <tr 
+                      key={st.id} 
+                      className={`transition-colors ${
+                        selectedStudentIds.includes(st.id) ? 'bg-amber-50/70' : 'hover:bg-amber-50/30'
+                      }`}
+                    >
+                      <td className="py-2.5 px-3 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedStudentIds.includes(st.id)}
+                          onChange={() => toggleSelectStudent(st.id)}
+                          className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer w-3.5 h-3.5"
+                        />
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-medium text-slate-900">
+                        {st.id}
+                      </td>
+
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-900 font-bold flex items-center justify-center text-xs shrink-0 border border-amber-200">
+                            {st.holyName.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
+                              <span>{st.holyName} {st.fullName}</span>
+                              {specialPromotions.some(sp => sp.studentId === st.id) && (
+                                <span 
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 text-[10px] font-bold border border-purple-300"
+                                  title="Học sinh được Cha Quản Sở & Quản Trị Viên đặc cách lên thẳng lớp trên"
+                                >
+                                  <Crown className="w-3 h-3 text-amber-500" />
+                                  Đặc cách
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-500">{st.address}</div>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-2.5 px-3">
+                        <span className="font-semibold text-blue-900 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-[11px]">
+                          {getClassName(st.classId)}
+                        </span>
+                      </td>
+
+                      <td className="py-2.5 px-3 whitespace-nowrap">
+                        <div>{new Date(st.dob).toLocaleDateString('vi-VN')}</div>
+                        <span className={`text-[10px] font-medium ${st.gender === 'Nam' ? 'text-blue-600' : 'text-pink-600'}`}>
+                          {st.gender}
+                        </span>
+                      </td>
+
+                      <td className="py-2.5 px-3">
+                        <span className="text-slate-700 font-medium">{st.subParish}</span>
+                      </td>
+
+                      <td className="py-2.5 px-3">
+                        <div className="font-medium text-slate-800">{st.parentName}</div>
+                        {st.parentPhone ? (
+                          <a href={`tel:${st.parentPhone.replace(/\s+/g, '')}`} className="text-[11px] text-emerald-700 hover:underline font-mono inline-flex items-center gap-1">
+                            <Phone className="w-2.5 h-2.5" />
+                            {st.parentPhone}
+                          </a>
+                        ) : (
+                          <div className="text-[10px] text-slate-400 italic">Chưa có SĐT</div>
+                        )}
+                      </td>
+
+                      <td className="py-2.5 px-3 whitespace-nowrap">
+                        <div className="flex flex-wrap gap-1">
+                          <span 
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              st.baptismDate 
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                                : 'bg-slate-100 text-slate-400'
+                            }`}
+                            title={st.baptismDate ? `Rửa tội: ${st.baptismDate}` : 'Chưa lãnh nhận'}
+                          >
+                            Rửa Tội
+                          </span>
+                          <span 
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              st.firstCommunionDate 
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200' 
+                                : 'bg-slate-100 text-slate-400'
+                            }`}
+                            title={st.firstCommunionDate ? `Rước lễ: ${st.firstCommunionDate}` : 'Chưa lãnh nhận'}
+                          >
+                            Rước Lễ
+                          </span>
+                          <span 
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              st.confirmationDate 
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200' 
+                                : 'bg-slate-100 text-slate-400'
+                            }`}
+                            title={st.confirmationDate ? `Thêm sức: ${st.confirmationDate}` : 'Chưa lãnh nhận'}
+                          >
+                            Thêm Sức
+                          </span>
+                        </div>
+                      </td>
+
+                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1">
+                          {/* Open Report Book */}
+                          <button
+                            onClick={() => onOpenReportBook(st)}
+                            className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
+                            title="Xem Sổ Liên Lạc"
+                          >
+                            <BookOpen className="w-4 h-4" />
+                          </button>
+
+                          {/* Print Single Student ATM Card & QR */}
+                          <button
+                            onClick={() => onOpenCardModal(st.classId, [st.id])}
+                            className="p-1.5 text-blue-700 hover:text-blue-900 hover:bg-blue-50 rounded"
+                            title="In Thẻ ATM & QR cho em này"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
+
+                          {/* Special Promotion for Admin or Pastor */}
+                          {canSpecial && onOpenSpecialPromotion && (
+                            <button
+                              onClick={() => onOpenSpecialPromotion(st)}
+                              className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded cursor-pointer"
+                              title="Xét đặc cách lên thẳng lớp trên"
+                            >
+                              <Crown className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Transfer single student (Admin, Pastor, Catechist Leader) */}
+                          {canTransfer && (
+                            <button
+                              onClick={() => onOpenTransferModal(st)}
+                              className="p-1.5 text-slate-600 hover:text-amber-700 hover:bg-amber-50 rounded cursor-pointer"
+                              title="Chuyển lớp cho học sinh này"
+                            >
+                              <ArrowRightLeft className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Edit */}
+                          {canEdit && (
+                            <button
+                              onClick={() => openEditModal(st)}
+                              className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded cursor-pointer"
+                              title="Chỉnh sửa hồ sơ"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Delete (Admin and Pastor only) */}
+                          {canDelete && (
+                            <button
+                              onClick={() => {
+                                if (confirm(`Bạn có chắc chắn muốn xóa học sinh ${st.holyName} ${st.fullName}?`)) {
+                                  onDeleteStudent(st.id);
+                                }
+                              }}
+                              className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded cursor-pointer"
+                              title="Xóa hồ sơ"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Add / Edit Student Modal */}
       {isFormOpen && (

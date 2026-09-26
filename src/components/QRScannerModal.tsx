@@ -19,25 +19,36 @@ import {
   CheckCheck,
   Lock,
   Zap,
-  Volume2
+  Volume2,
+  VolumeX,
+  History
 } from 'lucide-react';
 import jsQR from 'jsqr';
-import { Student, AttendanceStatus, ClassRoom, AttendanceTimeSlot, UserAccount, CustomDateSchedule } from '../types';
+import { Student, AttendanceStatus, ClassRoom, AttendanceTimeSlot, UserAccount, CustomDateSchedule, AttendanceRecord } from '../types';
 import { 
   evaluateAttendanceTime, 
   AttendanceTimeEvaluation,
   getEffectiveTimeConfigs,
   loadCustomSchedules
 } from '../utils/attendanceTimeUtils';
+import { 
+  playSuccessChime, 
+  playAlreadyMarkedChime, 
+  playErrorChime, 
+  isSoundEnabled, 
+  setSoundEnabled 
+} from '../utils/soundUtils';
 import { CustomScheduleModal } from './CustomScheduleModal';
 
 interface QRScannerModalProps {
   students: Student[];
   classes: ClassRoom[];
+  attendanceRecords?: AttendanceRecord[];
   currentUser?: UserAccount;
   authorizedClassIds?: string[];
   customSchedules?: Record<string, CustomDateSchedule>;
   onScheduleUpdated?: (updated: Record<string, CustomDateSchedule>) => void;
+  onOpenHistoryModal?: (classId?: string, studentId?: string) => void;
   onAttendanceMarked: (
     studentId: string, 
     status: AttendanceStatus, 
@@ -53,10 +64,12 @@ interface QRScannerModalProps {
 export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   students,
   classes,
+  attendanceRecords,
   currentUser,
   authorizedClassIds,
   customSchedules,
   onScheduleUpdated,
+  onOpenHistoryModal,
   onAttendanceMarked,
   onClose,
 }) => {
@@ -117,6 +130,15 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     type: 'error' | 'warning' | 'info';
   } | null>(null);
 
+  // Audio feedback toggle (persisted)
+  const [soundOn, setSoundOn] = useState<boolean>(() => isSoundEnabled());
+  const toggleSound = () => {
+    const next = !soundOn;
+    setSoundOn(next);
+    setSoundEnabled(next);
+    if (next) playSuccessChime(false);
+  };
+
   const [lastScannedResult, setLastScannedResult] = useState<{
     student: Student;
     status: AttendanceStatus;
@@ -124,6 +146,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     slotLabel: string;
     reason: string;
     isLate: boolean;
+    isDuplicate?: boolean;
   } | null>(null);
 
   const [recentLogs, setRecentLogs] = useState<{
@@ -142,6 +165,11 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   const selectedStatusRef = useRef<AttendanceStatus>(selectedStatus);
   const studentsRef = useRef<Student[]>(students);
   const onAttendanceMarkedRef = useRef(onAttendanceMarked);
+  const attendanceRecordsRef = useRef<AttendanceRecord[] | undefined>(attendanceRecords);
+  attendanceRecordsRef.current = attendanceRecords;
+
+  // Session cache to prevent repeated scans in the same modal session
+  const sessionScannedMapRef = useRef<Map<string, { time: string; status: AttendanceStatus; sessionType: string }>>(new Map());
 
   // Keep refs in sync
   const effectiveScanTime = useSimulatedTime ? `${simulatedTime}:00` : currentTime;
@@ -299,7 +327,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     });
 
     if (!student) {
-      playBeep('error');
+      playErrorChime();
       setScanNotification({
         title: 'Mã Thẻ Không Tồn Tại',
         message: `Mã nhận diện "${rawDetected}" không khớp với học sinh nào trong danh sách. Vui lòng kiểm tra lại.`,
@@ -315,7 +343,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     if (authorizedClassIdsRef.current && authorizedClassIdsRef.current.length > 0 && !authorizedClassIdsRef.current.includes(student.classId)) {
       const studentClass = classes.find(c => c.id === student.classId);
       const assignedClass = classes.find(c => authorizedClassIdsRef.current?.includes(c.id));
-      playBeep('error');
+      playErrorChime();
       setScanNotification({
         title: 'Giới Hạn Phân Quyền Lớp',
         message: `Học sinh ${student.holyName} ${student.fullName} thuộc lớp ${studentClass?.name || student.classId}. Bạn chỉ được điểm danh cho lớp ${assignedClass?.name || 'phụ trách'}.`,
@@ -324,6 +352,46 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       setTimeout(() => {
         setScanNotification(prev => (prev?.type === 'warning' ? null : prev));
       }, 3500);
+      return;
+    }
+
+    // KIỂM TRA ĐIỀU KIỆN QUY ĐỊNH: Mỗi mã QR chỉ được điểm danh 1 lần duy nhất trong ngày
+    // Nếu quét lần 2 thì phát âm báo đã điểm danh và hiển thị thông báo đã điểm danh
+    const existingRecord = (attendanceRecordsRef.current || []).find(
+      r => r.studentId === student.id && r.date === sessionDateRef.current
+    );
+    const sessionRecord = sessionScannedMapRef.current.get(student.id);
+
+    if (existingRecord || sessionRecord) {
+      const prevScanTime = (existingRecord?.scanTime || sessionRecord?.time) || 'trong ngày';
+      const prevStatus = existingRecord?.status || sessionRecord?.status || 'A';
+      const statusLabel = prevStatus === 'A' ? 'Đạt (A - Đúng giờ)' :
+                          prevStatus === 'B' ? 'Trễ (B - Đi muộn)' :
+                          prevStatus === 'C' ? 'Có Phép (C)' : 'Vắng (D)';
+
+      // Phát âm báo đã điểm danh
+      playAlreadyMarkedChime();
+
+      setScanNotification({
+        title: 'Học Sinh Đã Được Điểm Danh Hôm Nay',
+        message: `${student.holyName} ${student.fullName} (${student.id}) ĐÃ ĐIỂM DANH lúc ${prevScanTime} hôm nay (${sessionDateRef.current}). Trạng thái: ${statusLabel}. Mỗi mã QR chỉ được điểm danh 1 lần duy nhất trong ngày!`,
+        type: 'warning'
+      });
+
+      setLastScannedResult({
+        student,
+        status: prevStatus,
+        scanTime: prevScanTime,
+        slotLabel: 'ĐÃ ĐIỂM DANH HÔM NAY',
+        reason: `Đã điểm danh lúc ${prevScanTime} hôm nay. Hệ thống chỉ cho phép điểm danh 1 lần/ngày.`,
+        isLate: prevStatus === 'B',
+        isDuplicate: true,
+      });
+
+      setTimeout(() => {
+        setScanNotification(prev => (prev?.title === 'Học Sinh Đã Được Điểm Danh Hôm Nay' ? null : prev));
+      }, 4500);
+
       return;
     }
 
@@ -348,12 +416,15 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       slot = evaluation.slot;
     }
 
-    playBeep(isLate ? 'late' : 'on_time');
+    // Phát âm báo khi điểm danh THÀNH CÔNG (Web Audio API)
+    playSuccessChime(isLate);
 
-    // Haptic vibration feedback on mobile
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      navigator.vibrate(isLate ? [80, 40, 80] : 100);
-    }
+    // Ghi nhớ vào phiên hiện tại để chặn quét lần 2 ngay lập tức
+    sessionScannedMapRef.current.set(student.id, {
+      time: effectiveScanTimeRef.current,
+      status: finalStatus,
+      sessionType: sessionTypeRef.current
+    });
 
     // TỰ ĐỘNG ĐIỂM DANH VÀ LƯU VÀO SỔ TỨC THÌ (KHÔNG CẦN BƯỚC XÁC NHẬN NÀO)
     onAttendanceMarkedRef.current(
@@ -801,14 +872,44 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
               </p>
             </div>
           </div>
-          <button 
-            id="close-qr-scanner-btn"
-            onClick={onClose} 
-            className="text-slate-400 hover:text-white p-1 rounded-md transition-colors cursor-pointer"
-            title="Đóng cửa sổ quét QR"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Sound Toggle Button */}
+            <button
+              type="button"
+              onClick={toggleSound}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                soundOn
+                  ? 'bg-amber-500/20 text-amber-200 border-amber-400/40 hover:bg-amber-500/30'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+              }`}
+              title={soundOn ? 'Âm báo đang BẬT (bấm để tắt)' : 'Âm báo đang TẮT (bấm để bật)'}
+            >
+              {soundOn ? <Volume2 className="w-4 h-4 text-amber-300" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+              <span className="hidden sm:inline">{soundOn ? 'Âm Báo: Bật' : 'Âm Báo: Tắt'}</span>
+            </button>
+
+            {/* History Modal Trigger */}
+            {onOpenHistoryModal && (
+              <button
+                type="button"
+                onClick={() => onOpenHistoryModal()}
+                className="px-2.5 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-blue-400/30 cursor-pointer"
+                title="Xem lịch sử điểm danh của học sinh hoặc lớp"
+              >
+                <History className="w-4 h-4 text-blue-300" />
+                <span className="hidden sm:inline">Lịch Sử Điểm Danh</span>
+              </button>
+            )}
+
+            <button 
+              id="close-qr-scanner-btn"
+              onClick={onClose} 
+              className="text-slate-400 hover:text-white p-1 rounded-md transition-colors cursor-pointer ml-1"
+              title="Đóng cửa sổ quét QR"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* 3 Interactive Modes Navigation */}
@@ -1359,23 +1460,37 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             {/* Last Scanned Banner */}
             {lastScannedResult ? (
               <div className={`border rounded-xl p-3.5 shadow-xs animate-in fade-in zoom-in-95 duration-200 ${
-                lastScannedResult.status === 'A' ? 'bg-emerald-50 border-emerald-300 text-emerald-950' : 'bg-amber-50 border-amber-300 text-amber-950'
+                lastScannedResult.isDuplicate
+                  ? 'bg-amber-100 border-amber-400 text-amber-950'
+                  : lastScannedResult.status === 'A' 
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-950' 
+                    : 'bg-amber-50 border-amber-300 text-amber-950'
               }`}>
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-1.5 font-bold text-xs">
-                    {lastScannedResult.status === 'A' ? (
+                    {lastScannedResult.isDuplicate ? (
+                      <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                    ) : lastScannedResult.status === 'A' ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     ) : (
                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                     )}
                     <span>
-                      {lastScannedResult.status === 'A' ? 'ĐIỂM DANH ĐẠT (ĐÚNG GIỜ)' : 'ĐIỂM DANH TRỄ (-0.1Đ)'}
+                      {lastScannedResult.isDuplicate
+                        ? 'ĐÃ ĐIỂM DANH HÔM NAY (QUÉT LẶP LẠI)'
+                        : lastScannedResult.status === 'A' 
+                          ? 'ĐIỂM DANH ĐẠT (ĐÚNG GIỜ)' 
+                          : 'ĐIỂM DANH TRỄ (-0.1Đ)'}
                     </span>
                   </div>
                   <span className={`px-2 py-0.5 rounded font-bold text-xs ${
-                    lastScannedResult.status === 'A' ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                    lastScannedResult.isDuplicate
+                      ? 'bg-amber-600 text-white'
+                      : lastScannedResult.status === 'A' 
+                        ? 'bg-emerald-600 text-white' 
+                        : 'bg-amber-500 text-white'
                   }`}>
-                    Loại {lastScannedResult.status}
+                    {lastScannedResult.isDuplicate ? 'Đã Ghi Nhận' : `Loại ${lastScannedResult.status}`}
                   </span>
                 </div>
 
@@ -1386,10 +1501,12 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                   Mã số: <span className="font-mono font-bold text-slate-900">{lastScannedResult.student.id}</span>
                 </div>
 
-                <div className="mt-2 text-[11px] bg-white/80 p-2 rounded-lg border border-slate-200/60 space-y-0.5">
-                  <div>Khung giờ: <strong>{lastScannedResult.slotLabel}</strong></div>
-                  <div>Thời gian ghi nhận: <strong className="font-mono">{lastScannedResult.scanTime}</strong></div>
-                  <div className="text-slate-600">Đánh giá: {lastScannedResult.reason}</div>
+                <div className="mt-2 text-[11px] bg-white/90 p-2 rounded-lg border border-slate-200/60 space-y-0.5">
+                  <div>Trạng thái: <strong>Loại {lastScannedResult.status}</strong></div>
+                  <div>Thời gian điểm danh: <strong className="font-mono">{lastScannedResult.scanTime}</strong></div>
+                  <div className={lastScannedResult.isDuplicate ? "text-amber-800 font-semibold" : "text-slate-600"}>
+                    {lastScannedResult.reason}
+                  </div>
                 </div>
               </div>
             ) : (

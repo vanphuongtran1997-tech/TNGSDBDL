@@ -219,7 +219,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <span>Tiện ích công khai:</span>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
             <button
               type="button"
               onClick={() => setIsStudentLookupOpen(true)}

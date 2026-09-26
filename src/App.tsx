@@ -64,6 +64,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { SwitchAccountModal } from './components/SwitchAccountModal';
 import { CustomScheduleModal } from './components/CustomScheduleModal';
 import { ParishInfoEditModal } from './components/ParishInfoEditModal';
+import { AttendanceHistoryModal } from './components/AttendanceHistoryModal';
 
 export default function App() {
   // Application Data State
@@ -112,6 +113,9 @@ export default function App() {
   const [reportBookStudent, setReportBookStudent] = useState<Student | null>(null);
   const [transferModalStudent, setTransferModalStudent] = useState<Student | undefined>(undefined);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historyClassId, setHistoryClassId] = useState<string | undefined>(undefined);
+  const [historyStudentId, setHistoryStudentId] = useState<string | undefined>(undefined);
 
   // Parish & Catechist Office Information State (Persisted)
   const [parishInfo, setParishInfo] = useState<ParishInfo>(() => {
@@ -821,10 +825,11 @@ export default function App() {
         onLogout={handleLogout}
         onOpenQRScanner={() => setIsQRScannerOpen(true)}
         onOpenIdSearch={() => setIsIdSearchModalOpen(true)}
+        onOpenHistoryModal={() => setIsHistoryModalOpen(true)}
       />
 
       {/* Main Content View Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 pb-20 md:pb-6">
         {!isTabAllowed(currentUser.role, activeTab) && (
           <div className="bg-white rounded-xl p-8 border border-slate-200 text-center space-y-3 max-w-md mx-auto my-12 shadow-xs">
             <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto text-xl font-bold">
@@ -1110,10 +1115,16 @@ export default function App() {
         <QRScannerModal
           students={students}
           classes={classes}
+          attendanceRecords={attendanceRecords}
           currentUser={currentUser}
           authorizedClassIds={isParishWide ? undefined : authorizedClassIds}
           customSchedules={customSchedules}
           onScheduleUpdated={handleScheduleUpdated}
+          onOpenHistoryModal={(cId, stId) => {
+            setHistoryClassId(cId);
+            setHistoryStudentId(stId);
+            setIsHistoryModalOpen(true);
+          }}
           onAttendanceMarked={handleQRScannerAttendanceMarked}
           onClose={() => setIsQRScannerOpen(false)}
         />
@@ -1194,6 +1205,23 @@ export default function App() {
           customSchedules={customSchedules}
           onScheduleUpdated={handleScheduleUpdated}
           onClose={() => setIsCustomScheduleModalOpen(false)}
+        />
+      )}
+
+      {isHistoryModalOpen && (
+        <AttendanceHistoryModal
+          students={students}
+          classes={classes}
+          attendanceRecords={attendanceRecords}
+          currentUser={currentUser}
+          authorizedClassIds={isParishWide ? undefined : authorizedClassIds}
+          initialClassId={historyClassId}
+          initialStudentId={historyStudentId}
+          onClose={() => {
+            setIsHistoryModalOpen(false);
+            setHistoryClassId(undefined);
+            setHistoryStudentId(undefined);
+          }}
         />
       )}
 
