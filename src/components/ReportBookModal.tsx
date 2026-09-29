@@ -107,30 +107,41 @@ export const ReportBookModal: React.FC<ReportBookModalProps> = ({
           </div>
 
           {/* Student Info */}
-          <div className="grid grid-cols-2 gap-4 text-xs border-b border-slate-300 pb-3 font-sans">
-            <div>
-              <span className="text-slate-500">Tên Thánh, Họ và Tên:</span>{' '}
-              <strong className="text-blue-950 text-sm font-serif">{student.holyName} {student.fullName}</strong>
-            </div>
-            <div>
-              <span className="text-slate-500">Mã Học Sinh:</span>{' '}
-              <span className="font-mono font-bold text-slate-800">{student.id}</span>
-            </div>
-            <div>
-              <span className="text-slate-500">Lớp:</span>{' '}
-              <strong className="text-slate-800">{currentClass?.name}</strong>
-            </div>
-            <div>
-              <span className="text-slate-500">Niên Khoá:</span>{' '}
-              <strong className="text-slate-800">2026 – 2027</strong>
-            </div>
-            <div>
-              <span className="text-slate-500">Phụ Huynh:</span>{' '}
-              <span>{student.parentName} ({student.parentPhone})</span>
-            </div>
-            <div>
-              <span className="text-slate-500">Giáo Họ:</span>{' '}
-              <span>{student.subParish}</span>
+          <div className="flex items-start gap-4 border-b border-slate-300 pb-3 font-sans">
+            {student.avatarUrl && (
+              <div className="w-16 h-21 rounded border border-slate-400 overflow-hidden shrink-0 bg-slate-100 shadow-xs print:w-14 print:h-18">
+                <img
+                  src={student.avatarUrl}
+                  alt={`${student.holyName} ${student.fullName}`}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs flex-1">
+              <div>
+                <span className="text-slate-500">Tên Thánh, Họ và Tên:</span>{' '}
+                <strong className="text-blue-950 text-sm font-serif">{student.holyName} {student.fullName}</strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Mã Học Sinh:</span>{' '}
+                <span className="font-mono font-bold text-slate-800">{student.id}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Lớp:</span>{' '}
+                <strong className="text-slate-800">{currentClass?.name}</strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Niên Khoá:</span>{' '}
+                <strong className="text-slate-800">2026 – 2027</strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Phụ Huynh:</span>{' '}
+                <span>{student.parentName} ({student.parentPhone})</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Giáo Họ:</span>{' '}
+                <span>{student.subParish}</span>
+              </div>
             </div>
           </div>
 

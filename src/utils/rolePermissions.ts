@@ -264,13 +264,22 @@ export function isUserAuthorizedForStudent(user: UserAccount, student: Student, 
  * Role capability checks
  */
 export function canAddStudent(role: Role): boolean {
-  // Admin, Pastor, Catechist Leader, and Catechist can add students (Catechist only to their assigned class)
-  // Trainees and Parents cannot add students
-  return role === 'admin' || role === 'pastor' || role === 'catechist_leader' || role === 'catechist';
+  // Admin, Pastor, Catechist Leader, Secretary, Catechist, and Trainee (Huynh trưởng) can add students (to assigned classes)
+  return role === 'admin' || role === 'pastor' || role === 'catechist_leader' || role === 'secretary' || role === 'catechist' || role === 'trainee';
 }
 
 export function canEditStudent(role: Role): boolean {
-  return role === 'admin' || role === 'pastor' || role === 'catechist_leader' || role === 'catechist';
+  // Admin, Pastor, Catechist Leader, Secretary, Catechist, and Trainee (Huynh trưởng) can edit student profiles
+  return role === 'admin' || role === 'pastor' || role === 'catechist_leader' || role === 'secretary' || role === 'catechist' || role === 'trainee';
+}
+
+/**
+ * Check if a user role is permitted to capture directly or upload student photos.
+ * Only Huynh trưởng (trainee), Giáo lý viên (catechist), and higher roles (secretary, catechist_leader, pastor, admin) are permitted.
+ * Parents cannot perform this action.
+ */
+export function canManageStudentPhoto(role: Role): boolean {
+  return getRoleHierarchyLevel(role) >= getRoleHierarchyLevel('trainee');
 }
 
 export function canDeleteStudent(role: Role): boolean {
