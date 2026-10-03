@@ -63,6 +63,7 @@ import { AccountManagement } from './components/AccountManagement';
 import { LoginScreen } from './components/LoginScreen';
 import { SwitchAccountModal } from './components/SwitchAccountModal';
 import { CustomScheduleModal } from './components/CustomScheduleModal';
+import { sanitizeStudentData, safeLocalStorage } from './utils/security';
 import { ParishInfoEditModal } from './components/ParishInfoEditModal';
 import { AttendanceHistoryModal } from './components/AttendanceHistoryModal';
 
@@ -117,27 +118,15 @@ export default function App() {
   const [historyClassId, setHistoryClassId] = useState<string | undefined>(undefined);
   const [historyStudentId, setHistoryStudentId] = useState<string | undefined>(undefined);
 
-  // Parish & Catechist Office Information State (Persisted)
+  // Parish & Catechist Office Information State (Persisted securely)
   const [parishInfo, setParishInfo] = useState<ParishInfo>(() => {
-    const saved = localStorage.getItem('donbosco_parish_info');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (err) {
-        console.error('Failed to parse parish info from localStorage', err);
-      }
-    }
-    return DEFAULT_PARISH_INFO;
+    return safeLocalStorage.getItem<ParishInfo>('donbosco_parish_info', DEFAULT_PARISH_INFO);
   });
   const [isParishInfoEditOpen, setIsParishInfoEditOpen] = useState(false);
 
   const handleSaveParishInfo = (updatedInfo: ParishInfo) => {
     setParishInfo(updatedInfo);
-    try {
-      localStorage.setItem('donbosco_parish_info', JSON.stringify(updatedInfo));
-    } catch (err) {
-      console.error('Failed to persist parish info', err);
-    }
+    safeLocalStorage.setItem('donbosco_parish_info', updatedInfo);
   };
 
   // Custom Date Schedules (e.g. 7h30 standard cutoff overridden for special days)
@@ -219,10 +208,11 @@ export default function App() {
       alert('Bạn không có quyền thêm học sinh vào lớp này. Bạn chỉ được thao tác trên lớp được phân công.');
       return;
     }
+    const cleanStudent = sanitizeStudentData(newSt as any);
     const nextIdNum = students.length + 1;
     const generatedId = `DBS-KT-${String(nextIdNum).padStart(3, '0')}`;
     const newRecord: Student = {
-      ...newSt,
+      ...cleanStudent,
       id: generatedId,
     };
     setStudents(prev => [newRecord, ...prev]);
@@ -233,7 +223,8 @@ export default function App() {
       alert('Bạn không có quyền chỉnh sửa học sinh thuộc lớp khác.');
       return;
     }
-    setStudents(prev => prev.map(s => s.id === updatedSt.id ? updatedSt : s));
+    const cleanStudent = sanitizeStudentData(updatedSt) as Student;
+    setStudents(prev => prev.map(s => s.id === updatedSt.id ? cleanStudent : s));
   };
 
   const handleDeleteStudent = (id: string) => {
@@ -277,9 +268,10 @@ export default function App() {
         return;
       }
     }
-    setStudents(prev => [...newStudentsList, ...prev]);
+    const cleanStudents = newStudentsList.map(s => sanitizeStudentData(s) as Student);
+    setStudents(prev => [...cleanStudents, ...prev]);
     // Also auto-generate initial tuition records for new students
-    const newTuitions: TuitionItem[] = newStudentsList.map(st => ({
+    const newTuitions: TuitionItem[] = cleanStudents.map(st => ({
       id: `tui-auto-${st.id}`,
       studentId: st.id,
       academicYear: '2026 - 2027',
@@ -828,8 +820,8 @@ export default function App() {
         onOpenHistoryModal={() => setIsHistoryModalOpen(true)}
       />
 
-      {/* Main Content View Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 pb-20 md:pb-6">
+      {/* Main Content View Container - Full 16:9 Widescreen Desktop Optimized */}
+      <main className="flex-1 w-full max-w-[1920px] 2xl:max-w-full mx-auto p-2 sm:p-4 lg:p-6 xl:p-8 2xl:px-10 pb-20 md:pb-8">
         {!isTabAllowed(currentUser.role, activeTab) && (
           <div className="bg-white rounded-xl p-8 border border-slate-200 text-center space-y-3 max-w-md mx-auto my-12 shadow-xs">
             <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto text-xl font-bold">

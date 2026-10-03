@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Users, 
   QrCode, 
@@ -24,7 +24,10 @@ import {
   Menu,
   X,
   ChevronRight,
-  History
+  History,
+  Maximize2,
+  Minimize2,
+  Monitor
 } from 'lucide-react';
 import { Role, UserAccount, ParishInfo } from '../types';
 import { ROLE_PERMISSIONS } from '../utils/rolePermissions';
@@ -76,6 +79,33 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Desktop 16:9 Fullscreen State & Listener
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(() => {
+    return typeof document !== 'undefined' && Boolean(document.fullscreenElement);
+  });
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.warn('[Navbar] Fullscreen request not supported or denied:', err);
+    }
+  };
 
   const permissions = ROLE_PERMISSIONS[currentUser.role] || ROLE_PERMISSIONS.parent;
 
@@ -130,7 +160,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
         {/* Top Banner with Catholic & Salesian Identity */}
         <div className="bg-slate-900 text-white px-3 sm:px-4 py-2 border-b border-amber-500/30">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-3">
+          <div className="w-full max-w-[1920px] 2xl:max-w-full mx-auto px-1 sm:px-4 lg:px-6 xl:px-8 flex items-center justify-between gap-2 sm:gap-3">
             {/* Left brand & parish info */}
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               {/* Mobile menu hamburger toggle */}
@@ -373,6 +403,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                 )}
               </div>
 
+              {/* Desktop 16:9 Full Screen Presentation Mode */}
+              <button
+                id="top-fullscreen-toggle-btn"
+                type="button"
+                onClick={toggleFullscreen}
+                className="hidden lg:inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 hover:border-amber-400/50 text-xs font-semibold rounded-md shadow-xs transition-all cursor-pointer"
+                title={isFullscreen ? 'Thoát chế độ toàn màn hình 16:9 (Esc)' : 'Bật toàn màn hình chuẩn 16:9 cho máy tính'}
+              >
+                {isFullscreen ? (
+                  <>
+                    <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Thu Nhỏ</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden xl:inline">Toàn Màn Hình</span>
+                    <span className="text-[10px] bg-amber-400/20 text-amber-300 px-1 py-0.2 rounded font-mono font-bold">16:9</span>
+                  </>
+                )}
+              </button>
+
               {/* Direct Quick Logout Button on Top Bar */}
               <button
                 id="top-quick-logout-btn"
@@ -388,7 +440,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Desktop horizontal navigation tabs (Hidden on mobile phones, shown on md and above) */}
-        <div className="hidden md:block max-w-7xl mx-auto px-4 overflow-x-auto scrollbar-none">
+        <div className="hidden md:block w-full max-w-[1920px] 2xl:max-w-full mx-auto px-2 sm:px-4 lg:px-6 xl:px-8 overflow-x-auto scrollbar-none">
           <nav className="flex space-x-1 py-1 min-w-max">
             {authorizedNavItems.map((item) => {
               const Icon = item.icon;

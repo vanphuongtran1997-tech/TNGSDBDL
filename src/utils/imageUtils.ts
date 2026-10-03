@@ -11,8 +11,16 @@ export async function processImageFileToPortrait(
   quality = 0.88
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) {
-      return reject(new Error('Tệp đã chọn không phải là định dạng hình ảnh hợp lệ.'));
+    // Security check 1: File size restriction (max 10MB to avoid memory exhaustion / DoS)
+    const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return reject(new Error('Dung lượng tệp vượt quá giới hạn an toàn 10MB. Vui lòng chọn tệp nhỏ hơn.'));
+    }
+
+    // Security check 2: Strict MIME type validation. Reject SVG (can contain executable scripts)
+    const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!ALLOWED_MIME_TYPES.includes(file.type.toLowerCase())) {
+      return reject(new Error('Định dạng hình ảnh không an toàn hoặc không được hỗ trợ. Chỉ chấp nhận JPG, PNG hoặc WEBP (không hỗ trợ SVG).'));
     }
 
     const reader = new FileReader();

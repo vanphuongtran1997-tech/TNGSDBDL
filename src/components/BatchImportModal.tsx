@@ -13,6 +13,7 @@ import {
   Users
 } from 'lucide-react';
 import { Student, ClassRoom } from '../types';
+import { sanitizeStudentData } from '../utils/security';
 
 interface BatchImportModalProps {
   classes: ClassRoom[];
@@ -249,7 +250,7 @@ export const BatchImportModal: React.FC<BatchImportModalProps> = ({
       const generatedNum = maxIdNum + i + 1;
       const id = `DBS-KT-${String(generatedNum).padStart(3, '0')}`;
 
-      return {
+      const rawRecord = {
         id,
         holyName: r.data.holyName!,
         fullName: r.data.fullName!,
@@ -268,6 +269,8 @@ export const BatchImportModal: React.FC<BatchImportModalProps> = ({
         godParentName: r.data.godParentName,
         notes: r.data.notes,
       };
+
+      return sanitizeStudentData(rawRecord) as Student;
     });
 
     onImport(newStudentObjects);

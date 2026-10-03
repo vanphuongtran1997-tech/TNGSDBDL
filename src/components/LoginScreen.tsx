@@ -13,7 +13,9 @@ import {
   PhoneCall,
   Sparkles,
   ShieldAlert,
-  Clock
+  Clock,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { UserAccount, Role, Student, ClassRoom, Catechist, CalendarEvent, ParishInfo } from '../types';
 import { getDefaultPasswordForRole, DEFAULT_PARISH_INFO } from '../data/mockData';
@@ -74,6 +76,29 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [isStudentLookupOpen, setIsStudentLookupOpen] = useState(false);
   const [isAcademicYearOpen, setIsAcademicYearOpen] = useState(false);
   const [isOfficeContactOpen, setIsOfficeContactOpen] = useState(false);
+
+  // Desktop 16:9 Fullscreen State
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(() => {
+    return typeof document !== 'undefined' && Boolean(document.fullscreenElement);
+  });
+
+  useEffect(() => {
+    const handleFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (e) {
+      console.warn('Fullscreen failed', e);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,11 +229,31 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 flex flex-col justify-between py-8 px-4 sm:px-6 lg:px-8 text-slate-100">
       {/* Top Header */}
-      <div className="max-w-4xl mx-auto w-full text-center space-y-2">
+      <div className="max-w-4xl mx-auto w-full flex items-center justify-between gap-3 px-2">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-semibold tracking-wide uppercase shadow-sm">
           <Church className="w-4 h-4 text-amber-400" />
           <span>{parishInfo.parishName} • Niên Khóa {parishInfo.academicYear}</span>
         </div>
+
+        {/* Desktop 16:9 Fullscreen Mode */}
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/90 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-xs"
+          title={isFullscreen ? 'Thoát toàn màn hình (Esc)' : 'Bật toàn màn hình chuẩn 16:9'}
+        >
+          {isFullscreen ? (
+            <>
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>Thu Nhỏ</span>
+            </>
+          ) : (
+            <>
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span>Toàn Màn Hình 16:9</span>
+            </>
+          )}
+        </button>
       </div>
 
       {/* Public Quick Access Bar (No login required) */}

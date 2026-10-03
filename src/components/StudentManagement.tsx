@@ -52,6 +52,7 @@ import { ExcelExportModal } from './ExcelExportModal';
 import { exportStudentsToExcel } from '../utils/excelExport';
 import { StudentPhotoCaptureModal } from './StudentPhotoCaptureModal';
 import { processImageFileToPortrait } from '../utils/imageUtils';
+import { sanitizeStudentData } from '../utils/security';
 
 interface StudentManagementProps {
   students: Student[];
@@ -286,13 +287,15 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       return;
     }
 
+    const cleanFormData = sanitizeStudentData(formData);
+
     if (editingStudent) {
       onUpdateStudent({
         ...editingStudent,
-        ...formData,
+        ...cleanFormData,
       });
     } else {
-      onAddStudent(formData);
+      onAddStudent(cleanFormData);
     }
     setIsFormOpen(false);
   };
@@ -683,7 +686,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
               Không tìm thấy học sinh nào phù hợp với bộ lọc.
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5">
               {filteredStudents.map((st) => {
                 const isSelected = selectedStudentIds.includes(st.id);
                 const hasPromo = specialPromotions.some(sp => sp.studentId === st.id);

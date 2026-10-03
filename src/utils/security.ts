@@ -224,3 +224,102 @@ export function resetFailedLoginAttempts(): void {
     // ignore
   }
 }
+
+/**
+ * Validates that an image URL or data URI is safe.
+ * Restricts data URIs strictly to raster image MIME types (jpeg, png, webp).
+ * Explicitly rejects data:image/svg+xml or text/html which can contain inline scripts.
+ */
+export function isSafeImageUrl(url: unknown): boolean {
+  if (typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (!trimmed) return true; // empty is benign
+
+  // Reject SVG data URLs or any script-like payload
+  if (trimmed.toLowerCase().includes('svg') || trimmed.toLowerCase().includes('script')) {
+    return false;
+  }
+
+  // Safe raster image base64 data URIs
+  if (/^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(trimmed)) {
+    return true;
+  }
+
+  // Safe HTTPS image URLs
+  if (/^https:\/\/[^\s$.?#].[^\s]*\.(jpg|jpeg|png|webp|avif)(\?[^\s]*)?$/i.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Deep sanitization of student input fields to prevent stored XSS and malformed payloads.
+ */
+export function sanitizeStudentData<T extends Record<string, any>>(data: T): T {
+  const result: Record<string, any> = { ...data };
+
+  if (typeof result.holyName === 'string') result.holyName = sanitizeText(result.holyName, 80);
+  if (typeof result.fullName === 'string') result.fullName = sanitizeText(result.fullName, 120);
+  if (typeof result.phone === 'string') result.phone = sanitizeText(result.phone, 30).replace(/[^0-9+\s.-]/g, '');
+  if (typeof result.parentName === 'string') result.parentName = sanitizeText(result.parentName, 120);
+  if (typeof result.parentPhone === 'string') result.parentPhone = sanitizeText(result.parentPhone, 30).replace(/[^0-9+\s.-]/g, '');
+  if (typeof result.parentEmail === 'string') result.parentEmail = sanitizeText(result.parentEmail, 120);
+  if (typeof result.address === 'string') result.address = sanitizeText(result.address, 200);
+  if (typeof result.subParish === 'string') result.subParish = sanitizeText(result.subParish, 120);
+  if (typeof result.godParentName === 'string') result.godParentName = sanitizeText(result.godParentName, 120);
+  if (typeof result.notes === 'string') result.notes = sanitizeText(result.notes, 500);
+
+  // Validate avatarUrl: must be safe or reset to empty
+  if (result.avatarUrl) {
+    if (!isSafeImageUrl(result.avatarUrl)) {
+      result.avatarUrl = '';
+    }
+  }
+
+  return result as T;
+}
+
+/**
+ * Sanitizes file names for safe export/download without path traversal characters.
+ */
+export function sanitizeFileName(name: string, fallback: string = 'export'): string {
+  if (!name || typeof name !== 'string') return fallback;
+  const cleaned = name
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\.\.+/g, '.')
+    .trim();
+  return cleaned || fallback;
+}
+
+/**
+ * Safe LocalStorage abstraction with quota catch and schema parsing defense.
+ */
+export const safeLocalStorage = {
+  getItem<T>(key: string, fallback: T): T {
+    try {
+      const item = localStorage.getItem(key);
+      if (!item) return fallback;
+      return safeJsonParse<T>(item, fallback);
+    } catch {
+      return fallback;
+    }
+  },
+  setItem(key: string, value: any): boolean {
+    try {
+      const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+      localStorage.setItem(key, serialized);
+      return true;
+    } catch (e) {
+      console.warn(`[Security] LocalStorage setItem failed for key "${key}"`, e);
+      return false;
+    }
+  },
+  removeItem(key: string): void {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // ignore
+    }
+  }
+};
